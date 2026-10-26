@@ -14,6 +14,11 @@ namespace EmbyRadarr.Configuration
 
         public string RootFolderPath { get; set; } = string.Empty;
 
+        /// <summary>How long Radarr responses are cached (1-5 minutes).</summary>
+        public int CacheMinutes { get; set; } = 2;
+
+        public int CacheMinutesClamped => System.Math.Max(1, System.Math.Min(5, this.CacheMinutes));
+
         public bool IsConfigured => !string.IsNullOrWhiteSpace(this.RadarrUrl) && !string.IsNullOrWhiteSpace(this.ApiKey);
     }
 }

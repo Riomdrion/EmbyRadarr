@@ -12,6 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="MediaBrowser.Server.Core" Version="4.9.1.90" />
+    <EmbeddedResource Include="Images\channel.png" />
   </ItemGroup>
 
 </Project>

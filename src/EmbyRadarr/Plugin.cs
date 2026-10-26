@@ -49,6 +49,8 @@ namespace EmbyRadarr
 
         public RadarrClient Radarr => this.radarrClient;
 
+        public ResponseCache Cache { get; } = new ResponseCache();
+
         public IReadOnlyCollection<IPluginUIPageController> UIPageControllers
         {
             get

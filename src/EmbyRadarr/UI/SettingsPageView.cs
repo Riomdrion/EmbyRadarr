@@ -29,6 +29,7 @@ namespace EmbyRadarr.UI
                 ApiKey = string.IsNullOrEmpty(config.ApiKey) ? string.Empty : SettingsUI.ApiKeyMask,
                 QualityProfileId = config.QualityProfileId > 0 ? config.QualityProfileId.ToString() : null,
                 RootFolderPath = config.RootFolderPath,
+                CacheMinutes = config.CacheMinutesClamped,
             };
         }
 
@@ -66,7 +67,9 @@ namespace EmbyRadarr.UI
             config.ApiKey = this.ResolveApiKey();
             config.QualityProfileId = int.TryParse(ui.QualityProfileId, out var id) ? id : 0;
             config.RootFolderPath = ui.RootFolderPath ?? string.Empty;
+            config.CacheMinutes = Math.Max(1, Math.Min(5, ui.CacheMinutes));
             this.plugin.SaveConfiguration();
+            this.plugin.Cache.Clear();
 
             this.pendingApiKey = null;
             ui.ApiKey = string.IsNullOrEmpty(config.ApiKey) ? string.Empty : SettingsUI.ApiKeyMask;

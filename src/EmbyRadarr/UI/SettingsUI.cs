@@ -57,6 +57,16 @@ namespace EmbyRadarr.UI
         [SelectItemsSource(nameof(RootFolderOptions))]
         public string RootFolderPath { get; set; }
 
+        public SpacerItem Spacer2 { get; set; } = new SpacerItem();
+
+        public CaptionItem ChannelCaption { get; set; } = new CaptionItem("Channel");
+
+        [DisplayName("Cache duration (minutes)")]
+        [Description("How long Radarr data is reused before asking Radarr again (1-5).")]
+        [MinValue(1)]
+        [MaxValue(5)]
+        public int CacheMinutes { get; set; } = 2;
+
         protected override void Validate(ValidationContext context)
         {
             var url = this.RadarrUrl?.Trim();

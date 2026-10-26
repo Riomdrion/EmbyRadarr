@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Runtime.Serialization.Json;
@@ -33,6 +34,20 @@ namespace EmbyRadarr.Radarr
 
         public Task<List<RootFolder>> GetRootFolders(RadarrConnection conn, CancellationToken token)
             => this.Get<List<RootFolder>>(conn, "/api/v3/rootfolder", token);
+
+        public Task<List<Movie>> GetMovies(RadarrConnection conn, CancellationToken token)
+            => this.Get<List<Movie>>(conn, "/api/v3/movie", token);
+
+        /// <summary>Monitored movies with a cinema, digital or physical release between start and end.</summary>
+        public Task<List<Movie>> GetCalendar(RadarrConnection conn, DateTime startUtc, DateTime endUtc, CancellationToken token)
+            => this.Get<List<Movie>>(
+                conn,
+                "/api/v3/calendar?unmonitored=false&start=" + startUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                + "&end=" + endUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture),
+                token);
+
+        public Task<QueuePage> GetQueue(RadarrConnection conn, CancellationToken token)
+            => this.Get<QueuePage>(conn, "/api/v3/queue?page=1&pageSize=200&includeMovie=true", token);
 
         private async Task<T> Get<T>(RadarrConnection conn, string path, CancellationToken token)
         {

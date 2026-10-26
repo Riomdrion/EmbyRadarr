@@ -40,6 +40,47 @@ public class RadarrClientTests
     }
 
     [Fact]
+    public async Task Parses_movies_calendar_and_queue_with_realistic_payloads()
+    {
+        const string movie = """
+            {"title":"Dune: Part Three","originalLanguage":{"id":1,"name":"English"},"year":2026,"status":"announced",
+             "overview":"Sand.","inCinemas":"2026-12-18T00:00:00Z","digitalRelease":"2027-02-01T00:00:00Z",
+             "images":[{"coverType":"poster","url":"/MediaCover/7/poster.jpg","remoteUrl":"https://image.tmdb.org/t/p/original/x.jpg"}],
+             "remotePoster":"https://image.tmdb.org/t/p/original/x.jpg","youTubeTrailerId":"abc123","studio":"Legendary",
+             "hasFile":false,"monitored":true,"isAvailable":false,"runtime":0,"imdbId":"tt999","tmdbId":12345,
+             "genres":["Science Fiction"],"added":"2026-03-01T10:00:00Z","ratings":{"imdb":{"votes":1,"value":8.1}},"id":7}
+            """;
+        this.http.Responses["/radarr/api/v3/movie"] = (HttpStatusCode.OK, "[" + movie + "]");
+        this.http.Responses["/radarr/api/v3/calendar"] = (HttpStatusCode.OK, "[" + movie + "]");
+        this.http.Responses["/radarr/api/v3/queue"] = (HttpStatusCode.OK, """
+            {"page":1,"pageSize":200,"sortKey":"timeleft","sortDirection":"ascending","totalRecords":1,
+             "records":[{"movieId":7,"movie":MOVIE,"languages":[],"quality":{"quality":{"id":7}},"customFormats":[],
+             "size":8000000000.0,"title":"Dune.Part.Three.2026.2160p","sizeleft":4400000000.0,"timeleft":"00:12:00",
+             "estimatedCompletionTime":"2026-10-26T12:12:00Z","status":"downloading","trackedDownloadStatus":"ok",
+             "trackedDownloadState":"downloading","statusMessages":[],"downloadId":"X","protocol":"torrent","id":55}]}
+            """.Replace("MOVIE", movie));
+
+        var movies = await this.client.GetMovies(this.conn, default);
+        var calendar = await this.client.GetCalendar(this.conn, new DateTime(2026, 10, 26, 0, 0, 0, DateTimeKind.Utc), new DateTime(2027, 1, 24, 0, 0, 0, DateTimeKind.Utc), default);
+        var queue = await this.client.GetQueue(this.conn, default);
+
+        var m = movies.Single();
+        Assert.Equal((7, "Dune: Part Three", 2026, "abc123", 12345), (m.Id, m.Title, m.Year, m.YouTubeTrailerId, m.TmdbId));
+        Assert.True(m.Monitored);
+        Assert.False(m.HasFile);
+        Assert.Equal("2026-12-18T00:00:00Z", m.InCinemas);
+        Assert.Equal("poster", m.Images.Single().CoverType);
+        Assert.Single(calendar);
+        var q = queue.Records.Single();
+        Assert.Equal((55, 7, "downloading", "00:12:00"), (q.Id, q.MovieId, q.Status, q.TimeLeft));
+        Assert.Equal("Dune: Part Three", q.Movie.Title);
+        Assert.Equal("Downloading 45%, 12 min left", EmbyRadarr.Channel.ItemBuilder.QueueStatus(q));
+
+        Assert.Contains(this.http.Requests, r => r.Url.EndsWith("/api/v3/calendar?unmonitored=false&start=2026-10-26T00:00:00Z&end=2027-01-24T00:00:00Z"));
+        Assert.Contains(this.http.Requests, r => r.Url.EndsWith("/api/v3/queue?page=1&pageSize=200&includeMovie=true"));
+    }
+
+    [Fact]
     public async Task Sends_key_in_header_not_in_url_and_trims_trailing_slash()
     {
         this.http.Responses["/radarr/api/v3/system/status"] = (HttpStatusCode.OK, "{}");
