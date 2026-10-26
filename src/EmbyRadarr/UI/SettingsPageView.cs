@@ -87,6 +87,7 @@ namespace EmbyRadarr.UI
             config.CacheMinutes = Math.Max(1, Math.Min(5, ui.CacheMinutes));
             this.plugin.SaveConfiguration();
             this.plugin.Cache.Clear();
+            Channel.RadarrChannel.Current?.NotifyChanged();
 
             this.pendingApiKey = null;
             this.pendingToken = null;

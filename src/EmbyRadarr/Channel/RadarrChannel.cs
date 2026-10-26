@@ -29,9 +29,20 @@ namespace EmbyRadarr.Channel
         {
             // Polls Radarr in the background and tells Emby when something changed (IHasChangeEvent).
             this.timer = new Timer(_ => this.CheckForChanges(), null, TimeSpan.FromMinutes(1), BackgroundRefresh);
+            Current = this;
         }
 
         public event EventHandler ContentChanged;
+
+        /// <summary>The instance Emby created, so the settings page can ask for a refresh after saving.</summary>
+        internal static RadarrChannel Current { get; private set; }
+
+        /// <summary>Tells Emby to reload the channel, e.g. after the settings changed.</summary>
+        internal void NotifyChanged()
+        {
+            this.lastFingerprint = null;
+            this.ContentChanged?.Invoke(this, EventArgs.Empty);
+        }
 
         public string Name => "Radarr";
 
