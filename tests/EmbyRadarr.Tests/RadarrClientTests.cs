@@ -7,24 +7,24 @@ public class RadarrClientTests
 {
     private const string Key = "0123456789abcdef0123456789abcdef";
 
-    private readonly FakeHttpClient http = new();
+    private readonly FakeRadarr http = new();
     private readonly RecordingLogger log = new();
     private readonly RadarrClient client;
     private readonly RadarrConnection conn = new("http://radarr.local:7878/radarr/", Key);
 
     public RadarrClientTests()
     {
-        this.client = new RadarrClient(this.http, this.log);
+        this.client = new RadarrClient(this.log, this.http);
     }
 
     [Fact]
     public async Task Parses_status_profiles_and_root_folders_and_ignores_unknown_fields()
     {
-        this.http.Responses["/radarr/api/v3/system/status"] = (HttpStatusCode.OK,
+        this.http.Responses["GET /radarr/api/v3/system/status"] = (HttpStatusCode.OK,
             """{"appName":"Radarr","instanceName":"Radarr","version":"5.14.0.9383","isDocker":true,"startTime":"2026-10-20T10:00:00Z"}""");
-        this.http.Responses["/radarr/api/v3/qualityprofile"] = (HttpStatusCode.OK,
+        this.http.Responses["GET /radarr/api/v3/qualityprofile"] = (HttpStatusCode.OK,
             """[{"id":1,"name":"Any","upgradeAllowed":false,"cutoff":20,"items":[{"quality":{"id":1}}]},{"id":4,"name":"HD-1080p"}]""");
-        this.http.Responses["/radarr/api/v3/rootfolder"] = (HttpStatusCode.OK,
+        this.http.Responses["GET /radarr/api/v3/rootfolder"] = (HttpStatusCode.OK,
             """[{"id":1,"path":"/movies","accessible":true,"freeSpace":123,"unmappedFolders":[]}]""");
 
         var status = await this.client.GetSystemStatus(this.conn, default);
@@ -50,9 +50,9 @@ public class RadarrClientTests
              "hasFile":false,"monitored":true,"isAvailable":false,"runtime":0,"imdbId":"tt999","tmdbId":12345,
              "genres":["Science Fiction"],"added":"2026-03-01T10:00:00Z","ratings":{"imdb":{"votes":1,"value":8.1}},"id":7}
             """;
-        this.http.Responses["/radarr/api/v3/movie"] = (HttpStatusCode.OK, "[" + movie + "]");
-        this.http.Responses["/radarr/api/v3/calendar"] = (HttpStatusCode.OK, "[" + movie + "]");
-        this.http.Responses["/radarr/api/v3/queue"] = (HttpStatusCode.OK, """
+        this.http.Responses["GET /radarr/api/v3/movie"] = (HttpStatusCode.OK, "[" + movie + "]");
+        this.http.Responses["GET /radarr/api/v3/calendar"] = (HttpStatusCode.OK, "[" + movie + "]");
+        this.http.Responses["GET /radarr/api/v3/queue"] = (HttpStatusCode.OK, """
             {"page":1,"pageSize":200,"sortKey":"timeleft","sortDirection":"ascending","totalRecords":1,
              "records":[{"movieId":7,"movie":MOVIE,"languages":[],"quality":{"quality":{"id":7}},"customFormats":[],
              "size":8000000000.0,"title":"Dune.Part.Three.2026.2160p","sizeleft":4400000000.0,"timeleft":"00:12:00",
@@ -76,22 +76,21 @@ public class RadarrClientTests
         Assert.Equal("Dune: Part Three", q.Movie.Title);
         Assert.Equal("Downloading 45%, 12 min left", EmbyRadarr.Channel.ItemBuilder.QueueStatus(q));
 
-        Assert.Contains(this.http.Requests, r => r.Url.EndsWith("/api/v3/calendar?unmonitored=false&start=2026-10-26T00:00:00Z&end=2027-01-24T00:00:00Z"));
-        Assert.Contains(this.http.Requests, r => r.Url.EndsWith("/api/v3/queue?page=1&pageSize=200&includeMovie=true"));
+        Assert.Contains(this.http.Requests, r => r.Request.RequestUri!.PathAndQuery == "/radarr/api/v3/calendar?unmonitored=false&start=2026-10-26T00:00:00Z&end=2027-01-24T00:00:00Z");
+        Assert.Contains(this.http.Requests, r => r.Request.RequestUri!.PathAndQuery == "/radarr/api/v3/queue?page=1&pageSize=200&includeMovie=true");
     }
 
     [Fact]
     public async Task Sends_key_in_header_not_in_url_and_trims_trailing_slash()
     {
-        this.http.Responses["/radarr/api/v3/system/status"] = (HttpStatusCode.OK, "{}");
+        this.http.Responses["GET /radarr/api/v3/system/status"] = (HttpStatusCode.OK, "{}");
 
         await this.client.GetSystemStatus(this.conn, default);
 
-        var req = this.http.Requests.Single();
-        Assert.Equal("http://radarr.local:7878/radarr/api/v3/system/status", req.Url);
-        Assert.Equal(Key, req.RequestHeaders["X-Api-Key"]);
-        Assert.DoesNotContain(Key, req.Url);
-        Assert.False(req.LogRequest);
+        var req = this.http.Requests.Single().Request;
+        Assert.Equal("http://radarr.local:7878/radarr/api/v3/system/status", req.RequestUri!.ToString());
+        Assert.Equal(Key, req.Headers.GetValues("X-Api-Key").Single());
+        Assert.DoesNotContain(Key, req.RequestUri.ToString());
     }
 
     [Theory]
@@ -100,12 +99,22 @@ public class RadarrClientTests
     [InlineData(HttpStatusCode.InternalServerError, "HTTP 500")]
     public async Task Maps_http_errors_to_friendly_messages(HttpStatusCode status, string expected)
     {
-        this.http.Responses["/radarr/api/v3/system/status"] = (status, "");
+        this.http.Responses["GET /radarr/api/v3/system/status"] = (status, "");
 
         var ex = await Assert.ThrowsAsync<RadarrException>(() => this.client.GetSystemStatus(this.conn, default));
 
         Assert.Contains(expected, ex.Message);
         this.AssertKeyNeverLogged();
+    }
+
+    [Fact]
+    public async Task Radarr_validation_errors_are_shown()
+    {
+        this.http.On("POST /radarr/api/v3/movie", """[{"propertyName":"TmdbId","errorMessage":"This movie has already been added","severity":"error"}]""", HttpStatusCode.BadRequest);
+
+        var ex = await Assert.ThrowsAsync<RadarrException>(() => this.client.AddMovie(this.conn, new AddMovieRequest { Title = "x", TmdbId = 1 }, default));
+
+        Assert.Equal("Radarr refused the request: This movie has already been added", ex.Message);
     }
 
     [Fact]
@@ -122,7 +131,7 @@ public class RadarrClientTests
     [Fact]
     public async Task Html_instead_of_json_becomes_friendly_message()
     {
-        this.http.Responses["/radarr/api/v3/system/status"] = (HttpStatusCode.OK, "<html>login</html>");
+        this.http.Responses["GET /radarr/api/v3/system/status"] = (HttpStatusCode.OK, "<html>login</html>");
 
         var ex = await Assert.ThrowsAsync<RadarrException>(() => this.client.GetSystemStatus(this.conn, default));
 

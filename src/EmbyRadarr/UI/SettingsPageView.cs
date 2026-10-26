@@ -34,6 +34,7 @@ namespace EmbyRadarr.UI
                 QualityProfileId = config.QualityProfileId > 0 ? config.QualityProfileId.ToString() : null,
                 RootFolderPath = config.RootFolderPath,
                 CacheMinutes = config.CacheMinutesClamped,
+                RequestAccess = config.RequestAccess,
                 GitHubToken = Mask(config.GitHubToken),
             };
             this.Ui.VersionLabel.Text = "Installed version: " + plugin.Version;
@@ -69,6 +70,9 @@ namespace EmbyRadarr.UI
                 case SettingsUI.RestartCommand:
                     this.Restart();
                     return this;
+                case SettingsUI.SearchWantedCommand:
+                    await this.SearchAllWanted().ConfigureAwait(false);
+                    return this;
             }
 
             return await base.RunCommand(itemId, commandId, data).ConfigureAwait(false);
@@ -85,8 +89,9 @@ namespace EmbyRadarr.UI
             config.QualityProfileId = int.TryParse(ui.QualityProfileId, out var id) ? id : 0;
             config.RootFolderPath = ui.RootFolderPath ?? string.Empty;
             config.CacheMinutes = Math.Max(1, Math.Min(5, ui.CacheMinutes));
+            config.RequestAccess = ui.RequestAccess;
             this.plugin.SaveConfiguration();
-            this.plugin.Cache.Clear();
+            this.plugin.Data.ClearCache();
             Channel.RadarrChannel.Current?.NotifyChanged();
 
             this.pendingApiKey = null;
@@ -238,6 +243,25 @@ namespace EmbyRadarr.UI
             catch (Exception ex)
             {
                 SetFailed(ui.UpdateStatus, ex, "The download took too long.");
+            }
+        }
+
+        private async Task SearchAllWanted()
+        {
+            var status = this.Ui.SearchStatus;
+            try
+            {
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+                {
+                    await this.plugin.Data.SearchAllWanted(cts.Token).ConfigureAwait(false);
+                }
+
+                status.Status = ItemStatus.Succeeded;
+                status.StatusText = "Radarr is searching for all requested movies. Progress shows under Downloading.";
+            }
+            catch (Exception ex)
+            {
+                SetFailed(status, ex, "Radarr did not answer within 20 seconds.");
             }
         }
 

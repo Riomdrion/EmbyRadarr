@@ -102,6 +102,82 @@ namespace EmbyRadarr.Radarr
 
         [DataMember(Name = "images")]
         public List<MediaCover> Images { get; set; }
+
+        // Only set by the Discover list (/api/v3/importlist/movie).
+        [DataMember(Name = "isExisting")]
+        public bool IsExisting { get; set; }
+
+        [DataMember(Name = "isExcluded")]
+        public bool IsExcluded { get; set; }
+
+        [DataMember(Name = "isTrending")]
+        public bool IsTrending { get; set; }
+
+        [DataMember(Name = "isPopular")]
+        public bool IsPopular { get; set; }
+
+        [DataMember(Name = "isRecommendation")]
+        public bool IsRecommendation { get; set; }
+    }
+
+    /// <summary>Body for POST /api/v3/movie.</summary>
+    [DataContract]
+    public class AddMovieRequest
+    {
+        [DataMember(Name = "title")]
+        public string Title { get; set; }
+
+        [DataMember(Name = "tmdbId")]
+        public int TmdbId { get; set; }
+
+        [DataMember(Name = "year")]
+        public int Year { get; set; }
+
+        [DataMember(Name = "qualityProfileId")]
+        public int QualityProfileId { get; set; }
+
+        [DataMember(Name = "rootFolderPath")]
+        public string RootFolderPath { get; set; }
+
+        [DataMember(Name = "monitored")]
+        public bool Monitored { get; set; } = true;
+
+        [DataMember(Name = "minimumAvailability")]
+        public string MinimumAvailability { get; set; } = "released";
+
+        [DataMember(Name = "images", EmitDefaultValue = false)]
+        public List<MediaCover> Images { get; set; }
+
+        [DataMember(Name = "addOptions")]
+        public AddOptions AddOptions { get; set; } = new AddOptions();
+    }
+
+    [DataContract]
+    public class AddOptions
+    {
+        [DataMember(Name = "searchForMovie")]
+        public bool SearchForMovie { get; set; } = true;
+    }
+
+    /// <summary>Body for POST /api/v3/command, e.g. MoviesSearch or MissingMoviesSearch.</summary>
+    [DataContract]
+    public class CommandRequest
+    {
+        [DataMember(Name = "name")]
+        public string Name { get; set; }
+
+        [DataMember(Name = "movieIds", EmitDefaultValue = false)]
+        public List<int> MovieIds { get; set; }
+    }
+
+    [DataContract]
+    public class CommandResult
+    {
+        [DataMember(Name = "id")]
+        public int Id { get; set; }
+
+        [DataMember(Name = "status")]
+        public string Status { get; set; }
     }
 
     [DataContract]
@@ -109,6 +185,9 @@ namespace EmbyRadarr.Radarr
     {
         [DataMember(Name = "coverType")]
         public string CoverType { get; set; }
+
+        [DataMember(Name = "url", EmitDefaultValue = false)]
+        public string Url { get; set; }
 
         [DataMember(Name = "remoteUrl")]
         public string RemoteUrl { get; set; }

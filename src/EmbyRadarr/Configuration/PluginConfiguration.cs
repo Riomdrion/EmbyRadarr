@@ -17,6 +17,9 @@ namespace EmbyRadarr.Configuration
         /// <summary>How long Radarr responses are cached (1-5 minutes).</summary>
         public int CacheMinutes { get; set; } = 2;
 
+        /// <summary>Who may request movies by tapping the heart in the channel.</summary>
+        public RequestAccess RequestAccess { get; set; } = RequestAccess.Everyone;
+
         /// <summary>Optional, read-only GitHub token for updating from a private repository. Never logged.</summary>
         public string GitHubToken { get; set; } = string.Empty;
 

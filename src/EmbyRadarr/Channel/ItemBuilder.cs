@@ -13,19 +13,35 @@ namespace EmbyRadarr.Channel
     /// <summary>Turns Radarr data into channel items. Pure functions, no I/O.</summary>
     public static class ItemBuilder
     {
+        public const string DiscoverFolderId = "discover";
+        public const string TrendingFolderId = "discover-trending";
+        public const string PopularFolderId = "discover-popular";
+        public const string RecommendedFolderId = "discover-recommended";
         public const string WantedFolderId = "wanted";
         public const string UpcomingFolderId = "upcoming";
         public const string QueueFolderId = "queue";
+
+        /// <summary>
+        /// Provider id that marks items a favorite (heart) acts on: "request:&lt;tmdbId&gt;" or "search:&lt;radarrId&gt;".
+        /// </summary>
+        public const string ActionKey = "EmbyRadarrAction";
 
         public static IEnumerable<Movie> SelectWanted(IEnumerable<Movie> movies)
             => movies.Where(m => m.Monitored && !m.HasFile);
 
         public static ChannelItemInfo Wanted(Movie m)
         {
-            var status = m.IsAvailable ? "Wanted" : "Wanted (not released yet)";
-            var item = Base(m, WantedFolderId + ":" + m.Id, status);
+            var status = m.IsAvailable
+                ? "Requested, not available to watch yet. Tap the heart (favorite) to make Radarr search again."
+                : "Requested, not released yet.";
+            var item = Base(m, WantedFolderId + ":" + m.Id, "Not available yet", status);
             item.PremiereDate = FirstRelease(m);
-            item.Tags = new List<string> { "Wanted" };
+            item.Tags = new List<string> { "Requested" };
+            if (m.IsAvailable && m.Id > 0)
+            {
+                item.ProviderIds[ActionKey] = "search:" + m.Id.ToString(CultureInfo.InvariantCulture);
+            }
+
             return item;
         }
 
@@ -35,12 +51,18 @@ namespace EmbyRadarr.Channel
             var status = next == null
                 ? "Upcoming"
                 : string.Format(CultureInfo.InvariantCulture, "Releases {0:yyyy-MM-dd} ({1})", next.Value.Date, next.Value.Kind);
+            var shortStatus = next == null ? "Coming soon" : "Out " + next.Value.Date.ToString("MMM d", CultureInfo.InvariantCulture);
             if (m.HasFile)
             {
-                status += ", already downloaded";
+                status += ", already in your library";
+                shortStatus = "In library";
+            }
+            else
+            {
+                status += ". Not available to watch yet.";
             }
 
-            var item = Base(m, UpcomingFolderId + ":" + m.Id, status);
+            var item = Base(m, UpcomingFolderId + ":" + m.Id, shortStatus, status);
             item.PremiereDate = next?.Date ?? FirstRelease(m);
             item.Tags = new List<string> { "Upcoming" };
             return item;
@@ -49,9 +71,33 @@ namespace EmbyRadarr.Channel
         public static ChannelItemInfo Queued(QueueItem q)
         {
             var movie = q.Movie ?? new Movie { Id = q.MovieId, Title = q.Title };
-            var item = Base(movie, QueueFolderId + ":" + q.Id, QueueStatus(q));
+            var status = QueueStatus(q);
+            var item = Base(movie, QueueFolderId + ":" + q.Id, status, status + ". Not available to watch yet.");
             item.PremiereDate = FirstRelease(movie);
             item.Tags = new List<string> { "Downloading" };
+            return item;
+        }
+
+        /// <summary>A Discover movie. <paramref name="inRadarr"/> is the matching Radarr movie, if it was added already.</summary>
+        public static ChannelItemInfo Discover(Movie m, Movie inRadarr, string folderId)
+        {
+            ChannelItemInfo item;
+            if (inRadarr?.HasFile == true)
+            {
+                item = Base(m, folderId + ":" + m.TmdbId, "In library", "Already in your library. Watch it from your Movies library.");
+            }
+            else if (inRadarr != null)
+            {
+                item = Base(m, folderId + ":" + m.TmdbId, "Requested", "Requested, not available to watch yet.");
+            }
+            else
+            {
+                item = Base(m, folderId + ":" + m.TmdbId, "Tap ♥ to request", "Not in your library. Tap the heart (favorite) to request it.");
+                item.ProviderIds[ActionKey] = "request:" + m.TmdbId.ToString(CultureInfo.InvariantCulture);
+            }
+
+            item.PremiereDate = FirstRelease(m);
+            item.Tags = new List<string> { "Discover" };
             return item;
         }
 
@@ -125,8 +171,9 @@ namespace EmbyRadarr.Channel
                     sorted = items.OrderBy(i => i.PremiereDate ?? DateTimeOffset.MaxValue);
                     break;
                 default:
-                    // Queue: keep Radarr's order. Wanted/Upcoming: soonest release first.
-                    sorted = folderId == QueueFolderId ? items : items.OrderBy(i => i.PremiereDate ?? DateTimeOffset.MaxValue);
+                    // Queue and Discover: keep Radarr's order. Requested/Upcoming: soonest release first.
+                    var keepOrder = folderId == QueueFolderId || folderId.StartsWith(DiscoverFolderId, StringComparison.Ordinal);
+                    sorted = keepOrder ? items : items.OrderBy(i => i.PremiereDate ?? DateTimeOffset.MaxValue);
                     break;
             }
 
@@ -166,7 +213,7 @@ namespace EmbyRadarr.Channel
             return m.Images?.FirstOrDefault(i => i.CoverType == "poster" && !string.IsNullOrEmpty(i.RemoteUrl))?.RemoteUrl;
         }
 
-        private static ChannelItemInfo Base(Movie m, string id, string status)
+        private static ChannelItemInfo Base(Movie m, string id, string shortStatus, string status)
         {
             var overview = status;
             if (!string.IsNullOrWhiteSpace(m.Overview))
@@ -194,7 +241,8 @@ namespace EmbyRadarr.Channel
             return new ChannelItemInfo
             {
                 Id = id,
-                Name = string.IsNullOrEmpty(m.Title) ? "Unknown movie" : m.Title,
+                // The status is part of the name so it shows in every Emby app, even in poster grids.
+                Name = (string.IsNullOrEmpty(m.Title) ? "Unknown movie" : m.Title) + " \u00b7 " + shortStatus,
                 ProductionYear = m.Year > 0 ? m.Year : (int?)null,
                 Overview = overview,
                 Tagline = status,

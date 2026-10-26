@@ -6,7 +6,6 @@ using EmbyRadarr.UI;
 using EmbyRadarr.Update;
 using MediaBrowser.Common;
 using MediaBrowser.Common.Configuration;
-using MediaBrowser.Common.Net;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Logging;
 using MediaBrowser.Model.Plugins.UI;
@@ -30,14 +29,15 @@ namespace EmbyRadarr
         public Plugin(
             IApplicationPaths applicationPaths,
             IXmlSerializer xmlSerializer,
-            IHttpClient httpClient,
             ILogManager logManager,
             IApplicationHost applicationHost)
             : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             this.logger = logManager.GetLogger(PluginName);
-            this.radarrClient = new RadarrClient(httpClient, this.logger);
+            this.radarrClient = new RadarrClient(this.logger);
+            this.Data = new RadarrService(this.radarrClient, () => this.Configuration);
+            this.Data.Changed += (s, e) => Channel.RadarrChannel.Current?.NotifyChanged();
             this.AppHost = applicationHost;
             this.Updater = new PluginUpdater(this.logger);
         }
@@ -54,7 +54,7 @@ namespace EmbyRadarr
 
         public RadarrClient Radarr => this.radarrClient;
 
-        public ResponseCache Cache { get; } = new ResponseCache();
+        public RadarrService Data { get; }
 
         public PluginUpdater Updater { get; }
 

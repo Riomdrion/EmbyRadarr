@@ -1,43 +1,34 @@
 using System.Net;
 using System.Text;
-using MediaBrowser.Common.Net;
-using HttpRequestOptions = MediaBrowser.Common.Net.HttpRequestOptions;
 using MediaBrowser.Model.Logging;
 
 namespace EmbyRadarr.Tests;
 
-/// <summary>Stands in for Emby's IHttpClient. Returns canned responses per URL path.</summary>
-internal sealed class FakeHttpClient : IHttpClient
+/// <summary>Fake Radarr: canned responses per "METHOD /path" (query string ignored), records every request with its body.</summary>
+internal sealed class FakeRadarr : HttpMessageHandler
 {
     public Dictionary<string, (HttpStatusCode Status, string Body)> Responses { get; } = new();
 
     public Exception? Throw { get; set; }
 
-    public List<HttpRequestOptions> Requests { get; } = new();
+    public List<(HttpRequestMessage Request, string? Body)> Requests { get; } = new();
 
-    public Task<HttpResponseInfo> SendAsync(HttpRequestOptions options, string httpMethod)
+    public void On(string methodAndPath, string body, HttpStatusCode status = HttpStatusCode.OK)
+        => this.Responses[methodAndPath] = (status, body);
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        this.Requests.Add(options);
+        var body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+        this.Requests.Add((request, body));
         if (this.Throw != null)
         {
             throw this.Throw;
         }
 
-        var path = new Uri(options.Url).AbsolutePath;
-        var (status, body) = this.Responses.TryGetValue(path, out var r) ? r : (HttpStatusCode.NotFound, "");
-        return Task.FromResult(new HttpResponseInfo
-        {
-            StatusCode = status,
-            Content = new MemoryStream(Encoding.UTF8.GetBytes(body)),
-        });
+        var key = request.Method.Method + " " + request.RequestUri!.AbsolutePath;
+        var (status, responseBody) = this.Responses.TryGetValue(key, out var r) ? r : (HttpStatusCode.NotFound, "");
+        return new HttpResponseMessage(status) { Content = new StringContent(responseBody, Encoding.UTF8, "application/json") };
     }
-
-    public Task<HttpResponseInfo> GetResponse(HttpRequestOptions options) => this.SendAsync(options, "GET");
-    public Task<Stream> Get(HttpRequestOptions options) => throw new NotSupportedException();
-    public Task<HttpResponseInfo> Post(HttpRequestOptions options) => this.SendAsync(options, "POST");
-    public Task<string> GetTempFile(HttpRequestOptions options) => throw new NotSupportedException();
-    public Task<HttpResponseInfo> GetTempFileResponse(HttpRequestOptions options) => throw new NotSupportedException();
-    public IDisposable GetConnectionContext(HttpRequestOptions options) => throw new NotSupportedException();
 }
 
 /// <summary>Records every formatted log line so tests can check the API key never leaks.</summary>

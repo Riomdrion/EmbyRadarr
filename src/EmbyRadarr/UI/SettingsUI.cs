@@ -5,6 +5,7 @@ using Emby.Web.GenericEdit;
 using Emby.Web.GenericEdit.Common;
 using Emby.Web.GenericEdit.Elements;
 using Emby.Web.GenericEdit.Validation;
+using EmbyRadarr.Configuration;
 using MediaBrowser.Model.Attributes;
 
 namespace EmbyRadarr.UI
@@ -16,6 +17,7 @@ namespace EmbyRadarr.UI
         public const string CheckUpdateCommand = "CheckUpdate";
         public const string InstallUpdateCommand = "InstallUpdate";
         public const string RestartCommand = "RestartEmby";
+        public const string SearchWantedCommand = "SearchWanted";
 
         /// <summary>Shown instead of a saved secret (API key, token) so it is never sent to the browser.</summary>
         public const string ApiKeyMask = "********";
@@ -62,7 +64,17 @@ namespace EmbyRadarr.UI
 
         public SpacerItem Spacer2 { get; set; } = new SpacerItem();
 
-        public CaptionItem ChannelCaption { get; set; } = new CaptionItem("Channel");
+        public CaptionItem ChannelCaption { get; set; } = new CaptionItem("Channel and requests");
+
+        public LabelItem RequestHint { get; set; } = new LabelItem("Users request a movie by tapping the heart (favorite) on it in the channel's Discover folder. "
+            + "A heart on a movie under Requested makes Radarr search for it again.");
+
+        [DisplayName("Who can request movies")]
+        public RequestAccess RequestAccess { get; set; } = RequestAccess.Everyone;
+
+        public ButtonItem SearchWantedButton { get; set; } = new ButtonItem("Search all requested movies now") { Icon = IconNames.search, Data1 = SearchWantedCommand };
+
+        public StatusItem SearchStatus { get; set; } = new StatusItem("Search", "Radarr also searches on its own schedule.", ItemStatus.None);
 
         [DisplayName("Cache duration (minutes)")]
         [Description("How long Radarr data is reused before asking Radarr again (1-5).")]

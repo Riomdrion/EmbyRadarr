@@ -2,7 +2,7 @@
 
 Emby Server plugin that shows Radarr's wanted, upcoming and downloading movies inside Emby.
 
-Status: **phase 2** (settings page, connection test, read-only channel) + self-update from GitHub releases.
+Status: settings page, Radarr channel with requests (tap the heart), search, self-update from GitHub releases.
 
 ## Requirements
 
@@ -77,22 +77,37 @@ The API key is sent to Radarr only in the `X-Api-Key` header. It is never logged
 
 ## The Radarr channel
 
-After installing, a **Radarr** channel appears in Emby with three folders. It is read-only: only GET requests go to Radarr.
+After installing, every Emby user sees a **Radarr** channel, in every Emby app (web, phone, TV):
 
-| Folder | Source | Status text |
+| Folder | What it shows | Example title |
 |---|---|---|
-| Wanted | `GET /api/v3/movie`, monitored and no file | `Wanted` / `Wanted (not released yet)` |
-| Upcoming | `GET /api/v3/calendar` (next 90 days) | `Releases 2026-11-14 (digital)` |
-| Download queue | `GET /api/v3/queue?includeMovie=true` | `Downloading 45%, 12 min left`, `Paused 10%`, `Importing`, `Failed: ...` |
+| Discover > Trending / Popular / Recommended | Radarr's Discover list (`/api/v3/importlist/movie`) | `Dune · Tap ♥ to request`, `Dune · Requested`, `Dune · In library` |
+| Requested | Monitored movies without a file (`/api/v3/movie`) | `Dune · Not available yet` |
+| Coming soon | Radarr calendar, next 90 days | `Dune · Out Nov 14` |
+| Downloading | Radarr queue | `Dune · Downloading 45%, 12 min left` |
 
-- Each movie shows the TMDb poster, title, year, genres, runtime and certification. The status is the first line of the description and also the tagline.
-- Trailer: Radarr's YouTube id is added as an external link ("YouTube trailer") and as a URL in the description.
-- Sorting: default is soonest release first (queue keeps Radarr's order). Emby's sort requests (name, release date, date added, runtime) are honoured if Emby sends them. Each movie also gets a tag (`Wanted`, `Upcoming`, `Downloading`) for filtering.
-- Caching: Radarr responses are cached for 1-5 minutes (setting). A background check every 5 minutes notifies Emby when something changed.
-- Errors: Radarr offline, wrong key or an empty list show up as a message item in the folder instead of an error.
+The status is part of every title, so it is always clear that a movie is **not** watchable yet.
+
+### Requesting a movie: tap the heart
+
+Emby channels can't have custom buttons, and channel search is ignored by Emby 4.9+. The one action every Emby app offers on a channel item is **favorite** (the heart), so the plugin uses that:
+
+- Heart on a movie in **Discover** that is not in Radarr yet: the movie is added to Radarr with the configured quality profile and root folder, and Radarr starts searching.
+- Heart on a movie under **Requested** that is already released: Radarr searches for it again.
+- Anything else (movies already requested or in the library, Coming soon, Downloading): nothing happens.
+
+Who may request is a setting (everyone or administrators only). Results are logged (`Radarr` lines in embyserver.txt). The channel refreshes after a request.
+Administrators also have a **Search all requested movies now** button on the settings page.
+
+Other details:
+- Posters come from TMDb; trailer links appear as a "YouTube trailer" external link and in the description.
+- Sorting: Requested/Coming soon default to soonest release first; Discover and Downloading keep Radarr's order. Emby's own sort options are honoured if Emby sends them.
+- Radarr responses are cached for 1-5 minutes (setting). A background check every 5 minutes tells Emby when something changed.
+- Radarr offline, a wrong key or an empty list show up as a message item instead of an error.
 
 ## Design notes
 
 - The settings page uses the Emby SDK's GenericEdit UI (`IHasUIPages`), as in the SDK's `EmbyPluginUiTemplate`.
   The SDK's "Simple UI" (`BasePluginSimpleUI`) does not support custom buttons, and a classic `IHasWebPages` page would need hand-written HTML/JS plus a custom REST endpoint for the test button.
-- Radarr JSON is parsed with `DataContractJsonSerializer` (part of netstandard2.0), so the plugin is a single DLL with no extra dependencies.
+- Radarr and GitHub are called with .NET's `HttpClient`; JSON is handled with `DataContractJsonSerializer`. Both are part of netstandard2.0, so the plugin is a single DLL with no extra dependencies.
+- Pages inside Emby's web app are admin-only (the `/configurationpage` route has `roles:"admin"` and `/UI/View` requires an administrator), so regular users interact through the channel.

@@ -14,12 +14,11 @@ using MediaBrowser.Model.Entities;
 namespace EmbyRadarr.Channel
 {
     /// <summary>
-    /// Read-only channel with three folders: Wanted, Upcoming and Download queue.
-    /// Only GET requests are sent to Radarr.
+    /// The Radarr channel: Discover (request by tapping the heart), Requested, Coming soon and Downloading.
+    /// Browsing only reads from Radarr; requests are handled by <see cref="Requests.FavoriteRequestHandler"/>.
     /// </summary>
     public class RadarrChannel : IChannel, IHasChangeEvent, IRequiresMediaInfoCallback, IDisposable
     {
-        private const int UpcomingDays = 90;
         private static readonly TimeSpan BackgroundRefresh = TimeSpan.FromMinutes(5);
 
         private readonly Timer timer;
@@ -34,35 +33,45 @@ namespace EmbyRadarr.Channel
 
         public event EventHandler ContentChanged;
 
-        /// <summary>The instance Emby created, so the settings page can ask for a refresh after saving.</summary>
+        /// <summary>The instance Emby created, so other parts of the plugin can ask for a refresh.</summary>
         internal static RadarrChannel Current { get; private set; }
 
-        /// <summary>Tells Emby to reload the channel, e.g. after the settings changed.</summary>
+        public string Name => "Radarr";
+
+        public string Description => "Request movies and follow their status. Tap the heart on a movie in Discover to request it.";
+
+        public ChannelParentalRating ParentalRating => ChannelParentalRating.GeneralAudience;
+
+        private static Plugin Plugin => Plugin.Instance;
+
+        private static RadarrService Data => Plugin.Data;
+
+        /// <summary>Tells Emby to reload the channel, e.g. after the settings changed or a movie was requested.</summary>
         internal void NotifyChanged()
         {
             this.lastFingerprint = null;
             this.ContentChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        public string Name => "Radarr";
-
-        public string Description => "Wanted, upcoming and downloading movies from Radarr.";
-
-        public ChannelParentalRating ParentalRating => ChannelParentalRating.GeneralAudience;
-
-        private static Plugin Plugin => Plugin.Instance;
-
         public async Task<ChannelItemResult> GetChannelItems(InternalChannelItemQuery query, CancellationToken cancellationToken)
         {
             var folderId = query.FolderId;
+            if (!Plugin.Configuration.IsConfigured)
+            {
+                return Single(NotConfigured());
+            }
+
             if (string.IsNullOrEmpty(folderId))
             {
                 return RootFolders();
             }
 
-            if (!Plugin.Configuration.IsConfigured)
+            if (folderId == ItemBuilder.DiscoverFolderId)
             {
-                return Single(NotConfigured());
+                return Single(
+                    Folder(ItemBuilder.TrendingFolderId, "Trending", "Movies trending right now. Tap the heart on a movie to request it."),
+                    Folder(ItemBuilder.PopularFolderId, "Popular", "Popular movies. Tap the heart on a movie to request it."),
+                    Folder(ItemBuilder.RecommendedFolderId, "Recommended", "Recommended based on your Radarr library. Tap the heart on a movie to request it."));
             }
 
             List<ChannelItemInfo> items;
@@ -70,15 +79,20 @@ namespace EmbyRadarr.Channel
             {
                 switch (folderId)
                 {
+                    case ItemBuilder.TrendingFolderId:
+                    case ItemBuilder.PopularFolderId:
+                    case ItemBuilder.RecommendedFolderId:
+                        items = await DiscoverItems(folderId, cancellationToken).ConfigureAwait(false);
+                        break;
                     case ItemBuilder.WantedFolderId:
-                        items = (await this.GetWanted(cancellationToken).ConfigureAwait(false)).Select(ItemBuilder.Wanted).ToList();
+                        items = (await Data.GetWanted(cancellationToken).ConfigureAwait(false)).Select(ItemBuilder.Wanted).ToList();
                         break;
                     case ItemBuilder.UpcomingFolderId:
                         var today = DateTime.UtcNow.Date;
-                        items = (await this.GetUpcoming(cancellationToken).ConfigureAwait(false)).Select(m => ItemBuilder.Upcoming(m, today)).ToList();
+                        items = (await Data.GetUpcoming(cancellationToken).ConfigureAwait(false)).Select(m => ItemBuilder.Upcoming(m, today)).ToList();
                         break;
                     case ItemBuilder.QueueFolderId:
-                        items = (await this.GetQueue(cancellationToken).ConfigureAwait(false)).Select(ItemBuilder.Queued).ToList();
+                        items = (await Data.GetQueue(cancellationToken).ConfigureAwait(false)).Select(ItemBuilder.Queued).ToList();
                         break;
                     default:
                         // Message items are folders too; opening one shows nothing.
@@ -97,7 +111,7 @@ namespace EmbyRadarr.Channel
 
             if (items.Count == 0)
             {
-                return Single(ItemBuilder.Message("empty", EmptyTitle(folderId), "Radarr returned no movies for this list."));
+                return Single(ItemBuilder.Message("empty", EmptyTitle(folderId), "Nothing here right now."));
             }
 
             return ItemBuilder.Page(items, query, folderId);
@@ -105,7 +119,7 @@ namespace EmbyRadarr.Channel
 
         public Task<IEnumerable<MediaSourceInfo>> GetChannelItemMediaInfo(string id, CancellationToken cancellationToken)
         {
-            // These are movies that are not downloaded yet: there is nothing to play.
+            // None of these movies are downloaded: there is nothing to play.
             return Task.FromResult(Enumerable.Empty<MediaSourceInfo>());
         }
 
@@ -123,23 +137,26 @@ namespace EmbyRadarr.Channel
 
         public void Dispose() => this.timer.Dispose();
 
-        internal Task<List<Movie>> GetWanted(CancellationToken token)
-            => Fetch("movies", async (radarr, conn) => ItemBuilder.SelectWanted(await radarr.GetMovies(conn, token).ConfigureAwait(false)).ToList());
-
-        internal Task<List<Movie>> GetUpcoming(CancellationToken token)
+        private static async Task<List<ChannelItemInfo>> DiscoverItems(string folderId, CancellationToken token)
         {
-            var today = DateTime.UtcNow.Date;
-            return Fetch("calendar:" + today.ToString("yyyyMMdd"), (radarr, conn) => radarr.GetCalendar(conn, today, today.AddDays(UpcomingDays), token));
-        }
+            var discover = await Data.GetDiscover(token).ConfigureAwait(false);
+            var inRadarr = (await Data.GetMovies(token).ConfigureAwait(false))
+                .Where(m => m.TmdbId > 0)
+                .GroupBy(m => m.TmdbId)
+                .ToDictionary(g => g.Key, g => g.First());
 
-        internal Task<List<QueueItem>> GetQueue(CancellationToken token)
-            => Fetch("queue", async (radarr, conn) => (await radarr.GetQueue(conn, token).ConfigureAwait(false))?.Records ?? new List<QueueItem>());
+            Func<Movie, bool> filter;
+            switch (folderId)
+            {
+                case ItemBuilder.TrendingFolderId: filter = m => m.IsTrending; break;
+                case ItemBuilder.PopularFolderId: filter = m => m.IsPopular; break;
+                default: filter = m => m.IsRecommendation; break;
+            }
 
-        private static Task<T> Fetch<T>(string what, Func<RadarrClient, RadarrConnection, Task<T>> fetch)
-        {
-            var conn = RadarrConnection.FromConfig(Plugin.Configuration);
-            var ttl = TimeSpan.FromMinutes(Plugin.Configuration.CacheMinutesClamped);
-            return Plugin.Cache.GetOrFetch(conn.BaseUrl + "|" + what, ttl, () => fetch(Plugin.Radarr, conn));
+            return discover
+                .Where(filter)
+                .Select(m => ItemBuilder.Discover(m, inRadarr.TryGetValue(m.TmdbId, out var r) ? r : null, folderId))
+                .ToList();
         }
 
         private async void CheckForChanges()
@@ -151,13 +168,11 @@ namespace EmbyRadarr.Channel
                     return;
                 }
 
-                var wanted = await this.GetWanted(CancellationToken.None).ConfigureAwait(false);
-                var upcoming = await this.GetUpcoming(CancellationToken.None).ConfigureAwait(false);
-                var queue = await this.GetQueue(CancellationToken.None).ConfigureAwait(false);
+                var movies = await Data.GetMovies(CancellationToken.None).ConfigureAwait(false);
+                var queue = await Data.GetQueue(CancellationToken.None).ConfigureAwait(false);
 
-                var fingerprint = string.Join(",", wanted.Select(m => "w" + m.Id + m.IsAvailable))
-                    + "|" + string.Join(",", upcoming.Select(m => "u" + m.Id + m.HasFile))
-                    + "|" + string.Join(",", queue.Select(q => "q" + q.Id + ItemBuilder.QueueStatus(q)));
+                var fingerprint = string.Join(",", movies.Select(m => m.Id + (m.HasFile ? "f" : string.Empty) + (m.IsAvailable ? "a" : string.Empty)))
+                    + "|" + string.Join(",", queue.Select(q => q.Id + ItemBuilder.QueueStatus(q)));
 
                 if (this.lastFingerprint != null && fingerprint != this.lastFingerprint)
                 {
@@ -177,31 +192,26 @@ namespace EmbyRadarr.Channel
         }
 
         private static ChannelItemResult RootFolders()
-        {
-            if (!Plugin.Configuration.IsConfigured)
-            {
-                return Single(NotConfigured());
-            }
-
-            return Single(
-                Folder(ItemBuilder.WantedFolderId, "Wanted", "Monitored movies without a file yet."),
-                Folder(ItemBuilder.UpcomingFolderId, "Upcoming", "Releases in the next " + UpcomingDays + " days (Radarr calendar)."),
-                Folder(ItemBuilder.QueueFolderId, "Download queue", "Movies currently downloading, with progress."));
-        }
+            => Single(
+                Folder(ItemBuilder.DiscoverFolderId, "Discover", "Find movies to request. Tap the heart (favorite) on a movie to request it."),
+                Folder(ItemBuilder.WantedFolderId, "Requested", "Requested movies that are not available to watch yet."),
+                Folder(ItemBuilder.UpcomingFolderId, "Coming soon", "Requested movies with a release in the next " + RadarrService.UpcomingDays + " days."),
+                Folder(ItemBuilder.QueueFolderId, "Downloading", "Movies downloading right now, with progress."));
 
         private static ChannelItemInfo Folder(string id, string name, string overview)
             => new ChannelItemInfo { Id = id, Name = name, Overview = overview, Type = ChannelItemType.Folder, FolderType = ChannelFolderType.Container };
 
         private static ChannelItemInfo NotConfigured()
-            => ItemBuilder.Message("setup", "Radarr is not configured", "Open Dashboard > Plugins > Radarr, enter the Radarr URL and API key, test and save.");
+            => ItemBuilder.Message("setup", "Radarr is not configured", "An administrator needs to open Dashboard > Plugins > Radarr, enter the Radarr URL and API key, test and save.");
 
         private static string EmptyTitle(string folderId)
         {
             switch (folderId)
             {
-                case ItemBuilder.WantedFolderId: return "No wanted movies";
-                case ItemBuilder.UpcomingFolderId: return "No upcoming releases";
-                default: return "Download queue is empty";
+                case ItemBuilder.WantedFolderId: return "No requested movies";
+                case ItemBuilder.UpcomingFolderId: return "Nothing coming soon";
+                case ItemBuilder.QueueFolderId: return "Nothing downloading";
+                default: return "No movies found";
             }
         }
 

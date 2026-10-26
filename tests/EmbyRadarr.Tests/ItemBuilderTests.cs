@@ -41,21 +41,28 @@ public class ItemBuilderTests
         var item = ItemBuilder.Wanted(MakeMovie());
 
         Assert.Equal("wanted:1", item.Id);
-        Assert.Equal("Dune", item.Name);
+        Assert.Equal("Dune \u00b7 Not available yet", item.Name);
         Assert.Equal(2026, item.ProductionYear);
         Assert.Equal("https://image.tmdb.org/poster.jpg", item.ImageUrl);
-        Assert.StartsWith("Wanted\n\nSand.", item.Overview);
+        Assert.StartsWith("Requested, not available to watch yet.", item.Overview);
+        Assert.EndsWith("\n\nSand.", item.Overview);
+        Assert.Equal("search:1", item.ProviderIds[ItemBuilder.ActionKey]);
         Assert.Equal("438631", item.ProviderIds["Tmdb"]);
         Assert.Equal("tt1160419", item.ProviderIds["Imdb"]);
         Assert.Equal(TimeSpan.FromMinutes(155).Ticks, item.RunTimeTicks);
         Assert.Equal(ChannelItemType.Media, item.Type);
         Assert.Equal(ChannelMediaContentType.Movie, item.ContentType);
-        Assert.Contains("Wanted", item.Tags);
+        Assert.Contains("Requested", item.Tags);
     }
 
     [Fact]
     public void Unreleased_wanted_movie_says_so()
-        => Assert.StartsWith("Wanted (not released yet)", ItemBuilder.Wanted(MakeMovie(available: false)).Overview);
+    {
+        var item = ItemBuilder.Wanted(MakeMovie(available: false));
+
+        Assert.StartsWith("Requested, not released yet.", item.Overview);
+        Assert.False(item.ProviderIds.ContainsKey(ItemBuilder.ActionKey));
+    }
 
     [Fact]
     public void Remote_poster_field_wins_and_local_mediacover_urls_are_never_used()
@@ -87,7 +94,8 @@ public class ItemBuilderTests
     {
         var item = ItemBuilder.Upcoming(MakeMovie(), Today);
 
-        Assert.StartsWith("Releases 2026-11-14 (digital)", item.Overview);
+        Assert.StartsWith("Releases 2026-11-14 (digital). Not available to watch yet.", item.Overview);
+        Assert.Equal("Dune \u00b7 Out Nov 14", item.Name);
         Assert.Equal(new DateTimeOffset(2026, 11, 14, 0, 0, 0, TimeSpan.Zero), item.PremiereDate);
     }
 
@@ -124,7 +132,7 @@ public class ItemBuilderTests
         var item = ItemBuilder.Queued(new QueueItem { Id = 9, MovieId = 3, Title = "Some.Release.2160p", Status = "downloading", Size = 10, SizeLeft = 5 });
 
         Assert.Equal("queue:9", item.Id);
-        Assert.Equal("Some.Release.2160p", item.Name);
+        Assert.Equal("Some.Release.2160p \u00b7 Downloading 50%", item.Name);
         Assert.StartsWith("Downloading 50%", item.Overview);
     }
 
@@ -137,14 +145,39 @@ public class ItemBuilderTests
         var items = new List<ChannelItemInfo> { a, b };
 
         var byDefault = ItemBuilder.Page(items, new InternalChannelItemQuery(), ItemBuilder.WantedFolderId);
-        Assert.Equal(new[] { "A-movie", "B-movie" }, byDefault.Items.Select(i => i.Name));
+        Assert.Equal(new[] { "A-movie", "B-movie" }, byDefault.Items.Select(Title));
 
         var byNameDesc = ItemBuilder.Page(items, new InternalChannelItemQuery { SortBy = ChannelItemSortField.Name, SortDescending = true }, ItemBuilder.WantedFolderId);
-        Assert.Equal(new[] { "B-movie", "A-movie" }, byNameDesc.Items.Select(i => i.Name));
+        Assert.Equal(new[] { "B-movie", "A-movie" }, byNameDesc.Items.Select(Title));
 
         var paged = ItemBuilder.Page(items, new InternalChannelItemQuery { StartIndex = 1, Limit = 1 }, ItemBuilder.WantedFolderId);
         Assert.Single(paged.Items);
         Assert.Equal(2, paged.TotalRecordCount);
+    }
+
+    private static string Title(ChannelItemInfo i) => i.Name.Split(" \u00b7 ")[0];
+
+    [Fact]
+    public void Discover_item_not_in_radarr_can_be_requested_with_the_heart()
+    {
+        var item = ItemBuilder.Discover(MakeMovie(), null, ItemBuilder.TrendingFolderId);
+
+        Assert.Equal("Dune \u00b7 Tap \u2665 to request", item.Name);
+        Assert.Equal("request:438631", item.ProviderIds[ItemBuilder.ActionKey]);
+        Assert.Equal("discover-trending:438631", item.Id);
+        Assert.StartsWith("Not in your library.", item.Overview);
+    }
+
+    [Fact]
+    public void Discover_item_already_in_radarr_shows_requested_or_in_library_and_has_no_action()
+    {
+        var requested = ItemBuilder.Discover(MakeMovie(), MakeMovie(hasFile: false), ItemBuilder.PopularFolderId);
+        var inLibrary = ItemBuilder.Discover(MakeMovie(), MakeMovie(hasFile: true), ItemBuilder.PopularFolderId);
+
+        Assert.Equal("Dune \u00b7 Requested", requested.Name);
+        Assert.Equal("Dune \u00b7 In library", inLibrary.Name);
+        Assert.False(requested.ProviderIds.ContainsKey(ItemBuilder.ActionKey));
+        Assert.False(inLibrary.ProviderIds.ContainsKey(ItemBuilder.ActionKey));
     }
 
     [Fact]
