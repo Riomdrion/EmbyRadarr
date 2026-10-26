@@ -13,8 +13,11 @@ namespace EmbyRadarr.UI
     public class SettingsUI : EditableOptionsBase
     {
         public const string TestCommand = "TestConnection";
+        public const string CheckUpdateCommand = "CheckUpdate";
+        public const string InstallUpdateCommand = "InstallUpdate";
+        public const string RestartCommand = "RestartEmby";
 
-        /// <summary>Shown instead of the real API key so the key is never sent to the browser.</summary>
+        /// <summary>Shown instead of a saved secret (API key, token) so it is never sent to the browser.</summary>
         public const string ApiKeyMask = "********";
 
         public override string EditorTitle => "Radarr";
@@ -66,6 +69,31 @@ namespace EmbyRadarr.UI
         [MinValue(1)]
         [MaxValue(5)]
         public int CacheMinutes { get; set; } = 2;
+
+        public SpacerItem Spacer3 { get; set; } = new SpacerItem();
+
+        public CaptionItem UpdateCaption { get; set; } = new CaptionItem("Plugin updates");
+
+        public LabelItem VersionLabel { get; set; } = new LabelItem(string.Empty);
+
+        [DisplayName("GitHub token")]
+        [Description("Only needed while the GitHub repository is private: a fine-grained token with read-only 'Contents' access to that repository.")]
+        [IsPassword]
+        public string GitHubToken { get; set; }
+
+        public ButtonItem CheckUpdateButton { get; set; } = new ButtonItem("Check for updates") { Icon = IconNames.refresh, Data1 = CheckUpdateCommand };
+
+        public StatusItem UpdateStatus { get; set; } = new StatusItem("Update", "Not checked yet", ItemStatus.Unavailable);
+
+        public ButtonItem InstallUpdateButton { get; set; } = new ButtonItem("Install update") { Icon = IconNames.system_update, Data1 = InstallUpdateCommand, IsVisible = false };
+
+        public ButtonItem RestartButton { get; set; } = new ButtonItem("Restart Emby now")
+        {
+            Icon = IconNames.restart_alt,
+            Data1 = RestartCommand,
+            IsVisible = false,
+            ConfirmationPrompt = "Restart Emby now? Anything that is playing will stop.",
+        };
 
         protected override void Validate(ValidationContext context)
         {

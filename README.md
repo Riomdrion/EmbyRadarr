@@ -2,7 +2,7 @@
 
 Emby Server plugin that shows Radarr's wanted, upcoming and downloading movies inside Emby.
 
-Status: **phase 2** (settings page, connection test, read-only channel).
+Status: **phase 2** (settings page, connection test, read-only channel) + self-update from GitHub releases.
 
 ## Requirements
 
@@ -20,20 +20,49 @@ dotnet test          # unit tests (stubbed HTTP, no Emby/Radarr needed)
 
 ## Install
 
+### First install on a Synology (Emby package), without SSH
+
+Emby's plugins folder is `/volume1/@appdata/EmbyServer/plugins`. It is hidden in File Station and needs the right owner, so use DSM's Task Scheduler once:
+
+1. Download `EmbyRadarr.dll` from the latest GitHub release and put it in a shared folder, e.g. `/volume1/downloads/EmbyRadarr.dll`.
+2. DSM > Control Panel > Task Scheduler > Create > Scheduled Task > User-defined script.
+   User: `root`. Schedule: run once (any date). Script:
+
+   ```sh
+   SRC=/volume1/downloads/EmbyRadarr.dll
+   DST=/volume1/@appdata/EmbyServer/plugins
+   cp "$SRC" "$DST/EmbyRadarr.dll"
+   chown --reference="$DST" "$DST/EmbyRadarr.dll"
+   chmod 644 "$DST/EmbyRadarr.dll"
+   ```
+3. Select the task and click **Run**. Then restart Emby (Dashboard > power icon > Restart).
+
+### Updating (no SSH, no file copying)
+
+Dashboard > Plugins > Radarr > **Check for updates** > **Install** > **Restart Emby now**.
+The plugin downloads `EmbyRadarr.dll` from the latest GitHub release, checks its SHA-256, swaps it in (keeping `EmbyRadarr.dll.bak`) and asks Emby to restart.
+While the repository is private, enter a fine-grained GitHub token with read-only *Contents* access to this repository in the settings.
+
+### Other platforms
+
 Copy **only** `EmbyRadarr.dll` into Emby's `plugins` folder, then restart Emby.
 
 | Install type | Plugins folder | Restart | Log file |
 |---|---|---|---|
+| Synology package | `/volume1/@appdata/EmbyServer/plugins/` | Dashboard > Restart | `/volume1/@appdata/EmbyServer/logs/embyserver.txt` (or Dashboard > Logs) |
 | Linux (deb/rpm) | `/var/lib/emby/plugins/` | `sudo systemctl restart emby-server` | `/var/lib/emby/logs/embyserver.txt` |
 | Docker (`emby/embyserver`) | `<your /config volume>/plugins/` | `docker restart <container>` | `<your /config volume>/logs/embyserver.txt` |
 | Windows | `%AppData%\Emby-Server\programdata\plugins\` | Dashboard > Restart, or the tray icon | `%AppData%\Emby-Server\programdata\logs\embyserver.txt` |
 
-You can also restart from the Emby dashboard (power icon > Restart) and read logs under Dashboard > Logs.
-Plugin log lines are tagged `Radarr`:
+Plugin log lines are tagged `Radarr` (Dashboard > Logs > embyserver.txt).
+
+## Releasing a new version
 
 ```sh
-grep -i "radarr" /var/lib/emby/logs/embyserver.txt
+git tag v0.3.0 && git push origin v0.3.0
 ```
+
+GitHub Actions runs the tests, builds `EmbyRadarr.dll` with version 0.3.0 and attaches it to a release. Emby then offers it under "Check for updates".
 
 ## Configure
 

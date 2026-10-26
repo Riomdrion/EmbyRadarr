@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using EmbyRadarr.Configuration;
 using EmbyRadarr.Radarr;
 using EmbyRadarr.UI;
+using EmbyRadarr.Update;
+using MediaBrowser.Common;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Common.Plugins;
@@ -29,12 +31,15 @@ namespace EmbyRadarr
             IApplicationPaths applicationPaths,
             IXmlSerializer xmlSerializer,
             IHttpClient httpClient,
-            ILogManager logManager)
+            ILogManager logManager,
+            IApplicationHost applicationHost)
             : base(applicationPaths, xmlSerializer)
         {
             Instance = this;
             this.logger = logManager.GetLogger(PluginName);
             this.radarrClient = new RadarrClient(httpClient, this.logger);
+            this.AppHost = applicationHost;
+            this.Updater = new PluginUpdater(this.logger);
         }
 
         public static Plugin Instance { get; private set; }
@@ -50,6 +55,10 @@ namespace EmbyRadarr
         public RadarrClient Radarr => this.radarrClient;
 
         public ResponseCache Cache { get; } = new ResponseCache();
+
+        public PluginUpdater Updater { get; }
+
+        public IApplicationHost AppHost { get; }
 
         public IReadOnlyCollection<IPluginUIPageController> UIPageControllers
         {
