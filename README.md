@@ -112,6 +112,8 @@ The last 15 searches are kept in memory (they are gone after an Emby restart).
 
 The channel's posters get a coloured frame and a banner, in the style of cover-art plugins, so the status is visible at a glance:
 
+![Poster banners](docs/poster-badges-preview.png)
+
 | Banner | Colour | When |
 |---|---|---|
 | AANVRAGEN | grey | Ontdekken / Zoeken, not requested yet |
