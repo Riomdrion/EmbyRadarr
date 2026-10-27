@@ -108,6 +108,21 @@ A playlist name is the only place in every Emby app where a user can type text t
 
 The last 15 searches are kept in memory (they are gone after an Emby restart).
 
+### Status banners on posters
+
+The channel's posters get a coloured frame and a banner, in the style of cover-art plugins, so the status is visible at a glance:
+
+| Banner | Colour | When |
+|---|---|---|
+| AANVRAGEN | grey | Ontdekken / Zoeken, not requested yet |
+| AANGEVRAAGD | amber | requested, no file yet |
+| VERWACHT 14 NOV | purple | Binnenkort |
+| DOWNLOADEN 45% | blue, with progress bar | Wordt binnengehaald |
+| AL TE KIJKEN | green | already in the library |
+| MISLUKT | red | download failed |
+
+Posters of movies that can't be watched yet are slightly dimmed. This uses `IImageEnhancer` (documented SDK API) and draws with the SkiaSharp library that Emby itself ships (undocumented; compile-only reference, not shipped). If drawing fails, Emby shows the plain poster. The font (Inter Bold, SIL Open Font License, see `Fonts/Inter-LICENSE.txt`) is embedded because a NAS often has no fonts. Can be switched off in the settings.
+
 ### Settings
 
 Who may request is a setting (everyone or administrators only). Results are logged (`Radarr` lines in embyserver.txt). Administrators also have a **Search all requested movies now** button. The admin settings page itself stays English.

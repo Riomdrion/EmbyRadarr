@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using EmbyRadarr.Posters;
 using EmbyRadarr.Radarr;
 using MediaBrowser.Controller.Channels;
 using MediaBrowser.Model.Channels;
@@ -52,6 +53,7 @@ namespace EmbyRadarr.Channel
                 item.ProviderIds[ActionKey] = "search:" + m.Id.ToString(CultureInfo.InvariantCulture);
             }
 
+            PosterBadges.Remember(item.Id, new PosterBadge(BadgeKind.Requested, "AANGEVRAAGD"));
             return item;
         }
 
@@ -85,6 +87,9 @@ namespace EmbyRadarr.Channel
             var item = Base(m, UpcomingFolderId + ":" + m.Id, shortStatus, status);
             item.PremiereDate = next?.Date ?? FirstRelease(m);
             item.Tags = new List<string> { "Binnenkort" };
+            PosterBadges.Remember(item.Id, m.HasFile
+                ? new PosterBadge(BadgeKind.Available, "AL TE KIJKEN")
+                : new PosterBadge(BadgeKind.Upcoming, shortStatus.ToUpperInvariant()));
             return item;
         }
 
@@ -95,6 +100,7 @@ namespace EmbyRadarr.Channel
             var item = Base(movie, QueueFolderId + ":" + q.Id, status, status + ". Nog niet te kijken.");
             item.PremiereDate = FirstRelease(movie);
             item.Tags = new List<string> { "Wordt binnengehaald" };
+            PosterBadges.Remember(item.Id, QueueBadge(q));
             return item;
         }
 
@@ -102,19 +108,25 @@ namespace EmbyRadarr.Channel
         public static ChannelItemInfo Discover(Movie m, Movie inRadarr, string folderId)
         {
             ChannelItemInfo item;
+            PosterBadge badge;
             if (inRadarr?.HasFile == true)
             {
                 item = Base(m, folderId + ":" + m.TmdbId, "Al te kijken", "Staat al in je bibliotheek. Je kunt hem kijken via Films.");
+                badge = new PosterBadge(BadgeKind.Available, "AL TE KIJKEN");
             }
             else if (inRadarr != null)
             {
                 item = Base(m, folderId + ":" + m.TmdbId, "Aangevraagd", "Is al aangevraagd, maar nog niet te kijken.");
+                badge = new PosterBadge(BadgeKind.Requested, "AANGEVRAAGD");
             }
             else
             {
                 item = Base(m, folderId + ":" + m.TmdbId, "Tik ♥ om aan te vragen", "Nog niet beschikbaar. Tik op het hartje (favoriet) om deze film aan te vragen.");
                 item.ProviderIds[ActionKey] = "request:" + m.TmdbId.ToString(CultureInfo.InvariantCulture);
+                badge = new PosterBadge(BadgeKind.Request, "AANVRAGEN");
             }
+
+            PosterBadges.Remember(item.Id, badge);
 
             item.PremiereDate = FirstRelease(m);
             item.Tags = new List<string> { "Ontdekken" };
@@ -157,6 +169,21 @@ namespace EmbyRadarr.Channel
                     var left = FormatTimeLeft(q.TimeLeft);
                     return "Wordt gedownload " + percent + "%" + (left == null ? string.Empty : ", nog " + left);
             }
+        }
+
+        public static PosterBadge QueueBadge(QueueItem q)
+        {
+            var status = QueueStatus(q);
+            if (status.StartsWith("Wordt gedownload", StringComparison.Ordinal) || status.StartsWith("Gepauzeerd", StringComparison.Ordinal))
+            {
+                var percent = q.Size > 0 ? (int)Math.Floor(((q.Size - q.SizeLeft) * 100 / q.Size) + 1e-9) : 0;
+                percent = Math.Max(0, Math.Min(100, percent));
+                return new PosterBadge(BadgeKind.Downloading, "DOWNLOADEN " + percent + "%", percent);
+            }
+
+            return status == "Mislukt"
+                ? new PosterBadge(BadgeKind.Failed, "MISLUKT")
+                : new PosterBadge(BadgeKind.Downloading, status.ToUpperInvariant());
         }
 
         /// <summary>The earliest cinema/digital/physical release on or after today.</summary>
