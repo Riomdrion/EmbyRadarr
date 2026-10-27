@@ -186,15 +186,9 @@ namespace EmbyRadarr.Channel
                 : new PosterBadge(BadgeKind.Downloading, status.ToUpperInvariant());
         }
 
-        /// <summary>
-        /// Keeps the badge in memory and on the item itself (a provider id), so the poster enhancer still finds it
-        /// after an Emby restart, when Emby shows the channel from its database.
-        /// </summary>
+        /// <summary>Marks the item for the separate "Poster Banners" plugin, which draws the frame and banner.</summary>
         private static void SetBadge(ChannelItemInfo item, PosterBadge badge)
-        {
-            PosterBadges.Remember(item.Id, badge);
-            item.ProviderIds[PosterBadge.ProviderKey] = badge.Serialize();
-        }
+            => item.ProviderIds[PosterBadge.ProviderKey] = badge.Serialize();
 
         /// <summary>The earliest cinema/digital/physical release on or after today.</summary>
         public static (DateTimeOffset Date, string Kind)? NextRelease(Movie m, DateTime todayUtc)

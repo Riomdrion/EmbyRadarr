@@ -70,9 +70,7 @@ namespace EmbyRadarr.UI
             + "They request a movie by tapping the heart (favorite) on it under Ontdekken or Zoeken, and search by creating a playlist named \"Zoek: title\". "
             + "A heart on a released movie under Aangevraagd makes Radarr search for it again.");
 
-        [DisplayName("Status banners on posters")]
-        [Description("Frame and banner on the channel's posters: AANVRAGEN, AANGEVRAAGD, VERWACHT 14 NOV, DOWNLOADEN 45% (with progress bar), AL TE KIJKEN.")]
-        public bool PosterBadges { get; set; } = true;
+        public LabelItem BannerHint { get; set; } = new LabelItem("Status banners on posters (AANGEVRAAGD, DOWNLOADEN 45%, ...) come from the separate 'Poster Banners' plugin (GitHub: Riomdrion/EmbyPosterBanners).");
 
         [DisplayName("Who can request movies")]
         public RequestAccess RequestAccess { get; set; } = RequestAccess.Everyone;

@@ -17,9 +17,6 @@ namespace EmbyRadarr.Configuration
         /// <summary>How long Radarr responses are cached (1-5 minutes).</summary>
         public int CacheMinutes { get; set; } = 2;
 
-        /// <summary>Draw a status frame and banner on the channel's posters.</summary>
-        public bool PosterBadges { get; set; } = true;
-
         /// <summary>Who may request movies by tapping the heart in the channel.</summary>
         public RequestAccess RequestAccess { get; set; } = RequestAccess.Everyone;
 

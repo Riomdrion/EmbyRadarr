@@ -35,7 +35,6 @@ namespace EmbyRadarr.UI
                 RootFolderPath = config.RootFolderPath,
                 CacheMinutes = config.CacheMinutesClamped,
                 RequestAccess = config.RequestAccess,
-                PosterBadges = config.PosterBadges,
                 GitHubToken = Mask(config.GitHubToken),
             };
             this.Ui.VersionLabel.Text = "Installed version: " + plugin.Version;
@@ -91,7 +90,6 @@ namespace EmbyRadarr.UI
             config.RootFolderPath = ui.RootFolderPath ?? string.Empty;
             config.CacheMinutes = Math.Max(1, Math.Min(5, ui.CacheMinutes));
             config.RequestAccess = ui.RequestAccess;
-            config.PosterBadges = ui.PosterBadges;
             this.plugin.SaveConfiguration();
             this.plugin.Data.ClearCache();
             Channel.RadarrChannel.Current?.NotifyChanged();

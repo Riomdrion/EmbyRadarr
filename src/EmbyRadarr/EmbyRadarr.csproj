@@ -6,16 +6,13 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>EmbyRadarr</AssemblyName>
     <RootNamespace>EmbyRadarr</RootNamespace>
-    <Version>0.5.1</Version>
+    <Version>0.6.0</Version>
     <Nullable>disable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MediaBrowser.Server.Core" Version="4.9.1.90" />
     <EmbeddedResource Include="Images\channel.png" />
-    <EmbeddedResource Include="Fonts\Inter-Bold.ttf" />
-    <!-- Compile-only: Emby ships SkiaSharp 2.88 (managed 2.88.3, native 88.9) itself (undocumented). Not copied, not shipped. -->
-    <PackageReference Include="SkiaSharp" Version="2.88.9" ExcludeAssets="runtime;native;buildTransitive" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>
