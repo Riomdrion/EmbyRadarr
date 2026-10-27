@@ -33,6 +33,25 @@ namespace EmbyRadarr.Posters
         /// <summary>Download progress 0-100, only for <see cref="BadgeKind.Downloading"/>.</summary>
         public int? Percent { get; }
 
+        /// <summary>Provider id under which the badge is stored on the Emby item.</summary>
+        public const string ProviderKey = "EmbyRadarrBadge";
+
+        /// <summary>"Kind|percent|text".</summary>
+        public string Serialize()
+            => this.Kind + "|" + (this.Percent.HasValue ? this.Percent.Value.ToString(CultureInfo.InvariantCulture) : string.Empty) + "|" + this.Text;
+
+        public static PosterBadge Parse(string value)
+        {
+            var parts = (value ?? string.Empty).Split(new[] { '|' }, 3);
+            if (parts.Length != 3 || !Enum.TryParse(parts[0], out BadgeKind kind) || string.IsNullOrEmpty(parts[2]))
+            {
+                return null;
+            }
+
+            int? percent = int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var p) ? p : (int?)null;
+            return new PosterBadge(kind, parts[2], percent);
+        }
+
         /// <summary>Changes whenever the drawn poster would change; progress in steps of 5% to limit re-rendering.</summary>
         public string CacheKey
             => this.Kind + "|" + this.Text + "|" + (this.Percent.HasValue ? (this.Percent.Value / 5 * 5).ToString(CultureInfo.InvariantCulture) : "-");

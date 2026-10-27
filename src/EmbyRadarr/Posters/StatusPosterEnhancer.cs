@@ -23,10 +23,10 @@ namespace EmbyRadarr.Posters
         public bool Supports(BaseItem item, ImageType imageType)
             => imageType == ImageType.Primary
                && Plugin.Instance?.Configuration.PosterBadges == true
-               && PosterBadges.Get(item?.ExternalId) != null;
+               && BadgeFor(item) != null;
 
         public string GetConfigurationCacheKey(BaseItem item, ImageType imageType)
-            => StyleVersion + "|" + (PosterBadges.Get(item?.ExternalId)?.CacheKey ?? "none");
+            => StyleVersion + "|" + (BadgeFor(item)?.CacheKey ?? "none");
 
         public ImageSize GetEnhancedImageSize(BaseItem item, ImageType imageType, int imageIndex, ImageSize originalImageSize)
             => originalImageSize;
@@ -36,12 +36,12 @@ namespace EmbyRadarr.Posters
 
         public Task EnhanceImageAsync(BaseItem item, string inputFile, string outputFile, ImageType imageType, int imageIndex)
         {
-            var badge = PosterBadges.Get(item?.ExternalId);
+            var badge = BadgeFor(item);
             try
             {
                 if (badge == null)
                 {
-                    File.Copy(inputFile, outputFile, true);
+                    CopyIfNeeded(inputFile, outputFile);
                 }
                 else
                 {
@@ -56,10 +56,36 @@ namespace EmbyRadarr.Posters
                     Plugin.Instance?.Logger.ErrorException("Could not draw status banners on posters; showing plain posters", ex);
                 }
 
-                File.Copy(inputFile, outputFile, true);
+                CopyIfNeeded(inputFile, outputFile);
             }
 
             return Task.CompletedTask;
+        }
+
+        /// <summary>The freshest badge from the last channel load, else the one stored on the item.</summary>
+        public static PosterBadge BadgeFor(BaseItem item)
+        {
+            if (item == null)
+            {
+                return null;
+            }
+
+            var badge = PosterBadges.Get(item.ExternalId);
+            if (badge == null && item.ProviderIds != null && item.ProviderIds.TryGetValue(PosterBadge.ProviderKey, out var stored))
+            {
+                badge = PosterBadge.Parse(stored);
+            }
+
+            return badge;
+        }
+
+        // When another enhancer (e.g. Cover Art) ran first, Emby passes the same file as input and output.
+        private static void CopyIfNeeded(string inputFile, string outputFile)
+        {
+            if (!string.Equals(Path.GetFullPath(inputFile), Path.GetFullPath(outputFile), StringComparison.Ordinal))
+            {
+                File.Copy(inputFile, outputFile, true);
+            }
         }
     }
 }

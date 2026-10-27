@@ -53,7 +53,7 @@ namespace EmbyRadarr.Channel
                 item.ProviderIds[ActionKey] = "search:" + m.Id.ToString(CultureInfo.InvariantCulture);
             }
 
-            PosterBadges.Remember(item.Id, new PosterBadge(BadgeKind.Requested, "AANGEVRAAGD"));
+            SetBadge(item, new PosterBadge(BadgeKind.Requested, "AANGEVRAAGD"));
             return item;
         }
 
@@ -87,7 +87,7 @@ namespace EmbyRadarr.Channel
             var item = Base(m, UpcomingFolderId + ":" + m.Id, shortStatus, status);
             item.PremiereDate = next?.Date ?? FirstRelease(m);
             item.Tags = new List<string> { "Binnenkort" };
-            PosterBadges.Remember(item.Id, m.HasFile
+            SetBadge(item, m.HasFile
                 ? new PosterBadge(BadgeKind.Available, "AL TE KIJKEN")
                 : new PosterBadge(BadgeKind.Upcoming, shortStatus.ToUpperInvariant()));
             return item;
@@ -100,7 +100,7 @@ namespace EmbyRadarr.Channel
             var item = Base(movie, QueueFolderId + ":" + q.Id, status, status + ". Nog niet te kijken.");
             item.PremiereDate = FirstRelease(movie);
             item.Tags = new List<string> { "Wordt binnengehaald" };
-            PosterBadges.Remember(item.Id, QueueBadge(q));
+            SetBadge(item, QueueBadge(q));
             return item;
         }
 
@@ -126,7 +126,7 @@ namespace EmbyRadarr.Channel
                 badge = new PosterBadge(BadgeKind.Request, "AANVRAGEN");
             }
 
-            PosterBadges.Remember(item.Id, badge);
+            SetBadge(item, badge);
 
             item.PremiereDate = FirstRelease(m);
             item.Tags = new List<string> { "Ontdekken" };
@@ -184,6 +184,16 @@ namespace EmbyRadarr.Channel
             return status == "Mislukt"
                 ? new PosterBadge(BadgeKind.Failed, "MISLUKT")
                 : new PosterBadge(BadgeKind.Downloading, status.ToUpperInvariant());
+        }
+
+        /// <summary>
+        /// Keeps the badge in memory and on the item itself (a provider id), so the poster enhancer still finds it
+        /// after an Emby restart, when Emby shows the channel from its database.
+        /// </summary>
+        private static void SetBadge(ChannelItemInfo item, PosterBadge badge)
+        {
+            PosterBadges.Remember(item.Id, badge);
+            item.ProviderIds[PosterBadge.ProviderKey] = badge.Serialize();
         }
 
         /// <summary>The earliest cinema/digital/physical release on or after today.</summary>
@@ -244,6 +254,7 @@ namespace EmbyRadarr.Channel
                 Overview = text,
                 Type = ChannelItemType.Folder,
                 FolderType = ChannelFolderType.Container,
+                ForceUpdate = true,
             };
 
         public static string PosterUrl(Movie m)
@@ -304,6 +315,13 @@ namespace EmbyRadarr.Channel
                 OfficialRating = m.Certification,
                 RunTimeTicks = m.Runtime > 0 ? TimeSpan.FromMinutes(m.Runtime).Ticks : (long?)null,
                 DateCreated = ParseDate(m.Added),
+
+                // Emby only copies name, overview, tags and provider ids onto an existing channel item when ForceUpdate is set.
+                // The channel narrows this down to changed items (ChangeTracker).
+                ForceUpdate = true,
+
+                // Emby queues a metadata refresh for channel items; keep it from replacing our Dutch status text with TMDb's.
+                LockedFields = new[] { MetadataFields.Name, MetadataFields.Overview, MetadataFields.Tagline, MetadataFields.Tags, MetadataFields.Genres, MetadataFields.OfficialRating, MetadataFields.Studios },
             };
         }
 

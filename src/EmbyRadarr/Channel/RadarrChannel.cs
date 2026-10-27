@@ -126,6 +126,7 @@ namespace EmbyRadarr.Channel
                 return Single(ItemBuilder.Message("empty", EmptyTitle(folderId), "Hier staat nu niets."));
             }
 
+            ChangeTracker.MarkChanged(items);
             return ItemBuilder.Page(items, query, folderId);
         }
 

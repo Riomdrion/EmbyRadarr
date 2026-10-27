@@ -100,6 +100,69 @@ public class PosterTests : IDisposable
         Assert.Equal("not an image", File.ReadAllText(output));
     }
 
+    [Theory]
+    [InlineData(BadgeKind.Downloading, "DOWNLOADEN 45%", 45)]
+    [InlineData(BadgeKind.Upcoming, "VERWACHT 14 NOV", null)]
+    [InlineData(BadgeKind.Requested, "A|B", null)]
+    public void Badge_survives_being_stored_as_provider_id(BadgeKind kind, string text, int? percent)
+    {
+        var parsed = PosterBadge.Parse(new PosterBadge(kind, text, percent).Serialize())!;
+
+        Assert.Equal((kind, text, percent), (parsed.Kind, parsed.Text, parsed.Percent));
+        Assert.Null(PosterBadge.Parse("garbage"));
+        Assert.Null(PosterBadge.Parse(null!));
+    }
+
+    [Fact]
+    public void After_a_restart_the_badge_comes_from_the_item_itself()
+    {
+        var info = ItemBuilder.Wanted(new Movie { Id = 4242, Title = "Stored", Monitored = true });
+        var item = new MediaBrowser.Controller.Entities.Movies.Movie { ExternalId = "not-in-memory", ProviderIds = info.ProviderIds };
+
+        var badge = StatusPosterEnhancer.BadgeFor(item);
+
+        Assert.Equal(BadgeKind.Requested, badge!.Kind);
+        Assert.Null(StatusPosterEnhancer.BadgeFor(new MediaBrowser.Controller.Entities.Movies.Movie { ExternalId = "x" }));
+    }
+
+    [Fact]
+    public void Same_input_and_output_file_is_left_alone_on_fallback()
+    {
+        var path = Path.Combine(this.dir, "same.jpg");
+        File.WriteAllText(path, "not an image");
+        var item = new MediaBrowser.Controller.Entities.Movies.Movie { ExternalId = ItemBuilder.Wanted(new Movie { Id = 98, Title = "S" }).Id };
+
+        new StatusPosterEnhancer().EnhanceImageAsync(item, path, path, MediaBrowser.Model.Entities.ImageType.Primary, 0).Wait();
+
+        Assert.Equal("not an image", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void Items_lock_their_text_against_metadata_refresh()
+    {
+        var item = ItemBuilder.Wanted(new Movie { Id = 1, Title = "L" });
+
+        Assert.Contains(MediaBrowser.Model.Entities.MetadataFields.Name, item.LockedFields);
+        Assert.Contains(MediaBrowser.Model.Entities.MetadataFields.Overview, item.LockedFields);
+    }
+
+    [Fact]
+    public void Only_changed_items_are_force_updated()
+    {
+        MediaBrowser.Controller.Channels.ChannelItemInfo Q(double left) => ItemBuilder.Queued(new QueueItem { Id = 500, Title = "Q", Status = "downloading", Size = 100, SizeLeft = left });
+
+        var first = Q(80);
+        ChangeTracker.MarkChanged(new[] { first });
+        var same = Q(80);
+        ChangeTracker.MarkChanged(new[] { same });
+        var progressed = Q(50);
+        ChangeTracker.MarkChanged(new[] { progressed });
+
+        Assert.True(first.ForceUpdate);
+        Assert.False(same.ForceUpdate);
+        Assert.True(progressed.ForceUpdate);
+    }
+
     private static void AssertClose(SKColor expected, SKColor actual)
         => Assert.True(Math.Abs(expected.Red - actual.Red) < 24 && Math.Abs(expected.Green - actual.Green) < 24 && Math.Abs(expected.Blue - actual.Blue) < 24, $"expected {expected}, got {actual}");
 }
