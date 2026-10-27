@@ -174,7 +174,9 @@ namespace EmbyRadarr.Channel
                 var fingerprint = string.Join(",", movies.Select(m => m.Id + (m.HasFile ? "f" : string.Empty) + (m.IsAvailable ? "a" : string.Empty)))
                     + "|" + string.Join(",", queue.Select(q => q.Id + ItemBuilder.QueueStatus(q)));
 
-                if (this.lastFingerprint != null && fingerprint != this.lastFingerprint)
+                // First run after a (re)start also counts as a change: Emby keeps channel folders from earlier
+                // plugin versions in its database, so a plugin update would otherwise not show new folders.
+                if (fingerprint != this.lastFingerprint)
                 {
                     this.ContentChanged?.Invoke(this, EventArgs.Empty);
                 }
