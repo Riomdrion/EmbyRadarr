@@ -66,8 +66,9 @@ namespace EmbyRadarr.UI
 
         public CaptionItem ChannelCaption { get; set; } = new CaptionItem("Channel and requests");
 
-        public LabelItem RequestHint { get; set; } = new LabelItem("Users request a movie by tapping the heart (favorite) on it in the channel's Discover folder. "
-            + "A heart on a movie under Requested makes Radarr search for it again.");
+        public LabelItem RequestHint { get; set; } = new LabelItem("Users see the channel as \"Films aanvragen\" (Dutch, no mention of Radarr). "
+            + "They request a movie by tapping the heart (favorite) on it under Ontdekken or Zoeken, and search by creating a playlist named \"Zoek: title\". "
+            + "A heart on a released movie under Aangevraagd makes Radarr search for it again.");
 
         [DisplayName("Who can request movies")]
         public RequestAccess RequestAccess { get; set; } = RequestAccess.Everyone;

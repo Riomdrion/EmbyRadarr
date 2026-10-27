@@ -11,7 +11,7 @@ namespace EmbyRadarr.Channel
     {
         public const string ProviderKey = "RadarrYouTubeTrailer";
 
-        public string Name => "YouTube trailer";
+        public string Name => "YouTube-trailer";
 
         public string Key => ProviderKey;
 

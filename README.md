@@ -75,39 +75,51 @@ Dashboard > Plugins > Radarr > Settings (also linked in the dashboard menu as "R
 Settings are stored in Emby's plugin configuration file (`plugins/configurations/EmbyRadarr.xml`).
 The API key is sent to Radarr only in the `X-Api-Key` header. It is never logged and never sent back to the browser (the form shows `********`).
 
-## The Radarr channel
+## The channel: "Films aanvragen"
 
-After installing, every Emby user sees a **Radarr** channel, in every Emby app (web, phone, TV):
+Every Emby user sees a channel called **Films aanvragen**, in every Emby app (web, phone, TV). Everything users see is Dutch and never mentions Radarr.
 
 | Folder | What it shows | Example title |
 |---|---|---|
-| Discover > Trending / Popular / Recommended | Radarr's Discover list (`/api/v3/importlist/movie`) | `Dune · Tap ♥ to request`, `Dune · Requested`, `Dune · In library` |
-| Requested | Monitored movies without a file (`/api/v3/movie`) | `Dune · Not available yet` |
-| Coming soon | Radarr calendar, next 90 days | `Dune · Out Nov 14` |
-| Downloading | Radarr queue | `Dune · Downloading 45%, 12 min left` |
+| Ontdekken > Nu populair / Populair / Aanbevolen | Radarr's Discover list | `Dune · Tik ♥ om aan te vragen`, `Dune · Aangevraagd`, `Dune · Al te kijken` |
+| Zoeken | Results of recent searches (see below) | same as Ontdekken |
+| Aangevraagd | Monitored movies without a file | `Dune · Nog niet te kijken` |
+| Binnenkort | Radarr calendar, next 90 days | `Dune · Verwacht 14 nov` |
+| Wordt binnengehaald | Radarr queue | `Dune · Wordt gedownload 45%, nog 12 min` |
 
 The status is part of every title, so it is always clear that a movie is **not** watchable yet.
 
-### Requesting a movie: tap the heart
+### Requesting: tap the heart
 
-Emby channels can't have custom buttons, and channel search is ignored by Emby 4.9+. The one action every Emby app offers on a channel item is **favorite** (the heart), so the plugin uses that:
+Emby channels can't have custom buttons, and channel search is ignored by Emby 4.9+. The one action every Emby app offers on a channel item is **favorite** (the heart):
 
-- Heart on a movie in **Discover** that is not in Radarr yet: the movie is added to Radarr with the configured quality profile and root folder, and Radarr starts searching.
-- Heart on a movie under **Requested** that is already released: Radarr searches for it again.
-- Anything else (movies already requested or in the library, Coming soon, Downloading): nothing happens.
+- Heart on a movie under **Ontdekken** or **Zoeken** that isn't requested yet: it is added to Radarr with the configured quality profile and root folder, and Radarr starts searching.
+- Heart on a released movie under **Aangevraagd**: Radarr searches for it again.
+- Anything else: nothing happens.
 
-Who may request is a setting (everyone or administrators only). Results are logged (`Radarr` lines in embyserver.txt). The channel refreshes after a request.
-Administrators also have a **Search all requested movies now** button on the settings page.
+### Searching: a playlist named "Zoek: titel"
+
+A playlist name is the only place in every Emby app where a user can type text the server sees. Creating a playlist named `Zoek: Dune` (also `Zoeken:`, `Search:`):
+
+1. looks the title up via Radarr (`/api/v3/movie/lookup`);
+2. shows the results under **Zoeken** as `“Dune” (8 films)`;
+3. renames the playlist to `✓ 8 films gevonden voor “Dune”: kijk bij Films aanvragen › Zoeken` (or `✗ ...` when nothing was found);
+4. removes that playlist again after about an hour.
+
+The last 15 searches are kept in memory (they are gone after an Emby restart).
+
+### Settings
+
+Who may request is a setting (everyone or administrators only). Results are logged (`Radarr` lines in embyserver.txt). Administrators also have a **Search all requested movies now** button. The admin settings page itself stays English.
 
 Other details:
-- Posters come from TMDb; trailer links appear as a "YouTube trailer" external link and in the description.
-- Sorting: Requested/Coming soon default to soonest release first; Discover and Downloading keep Radarr's order. Emby's own sort options are honoured if Emby sends them.
-- Radarr responses are cached for 1-5 minutes (setting). A background check every 5 minutes tells Emby when something changed.
-- Radarr offline, a wrong key or an empty list show up as a message item instead of an error.
+- Posters come from TMDb; trailer links appear as a "YouTube-trailer" external link and in the description.
+- Radarr responses are cached for 1-5 minutes (setting). A background check every 5 minutes, and once after every start, tells Emby to reload the channel.
+- Errors show up as a message item ("Aanvragen werkt nu even niet") instead of an error.
 
 ## Design notes
 
 - The settings page uses the Emby SDK's GenericEdit UI (`IHasUIPages`), as in the SDK's `EmbyPluginUiTemplate`.
   The SDK's "Simple UI" (`BasePluginSimpleUI`) does not support custom buttons, and a classic `IHasWebPages` page would need hand-written HTML/JS plus a custom REST endpoint for the test button.
 - Radarr and GitHub are called with .NET's `HttpClient`; JSON is handled with `DataContractJsonSerializer`. Both are part of netstandard2.0, so the plugin is a single DLL with no extra dependencies.
-- Pages inside Emby's web app are admin-only (the `/configurationpage` route has `roles:"admin"` and `/UI/View` requires an administrator), so regular users interact through the channel.
+- Pages inside Emby's web app are admin-only (the `/configurationpage` route has `roles:"admin"` and `/UI/View` requires an administrator), so regular users interact through the channel (heart = request, playlist name = search).

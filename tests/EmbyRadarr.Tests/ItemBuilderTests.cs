@@ -41,10 +41,10 @@ public class ItemBuilderTests
         var item = ItemBuilder.Wanted(MakeMovie());
 
         Assert.Equal("wanted:1", item.Id);
-        Assert.Equal("Dune \u00b7 Not available yet", item.Name);
+        Assert.Equal("Dune \u00b7 Nog niet te kijken", item.Name);
         Assert.Equal(2026, item.ProductionYear);
         Assert.Equal("https://image.tmdb.org/poster.jpg", item.ImageUrl);
-        Assert.StartsWith("Requested, not available to watch yet.", item.Overview);
+        Assert.StartsWith("Aangevraagd, maar nog niet te kijken.", item.Overview);
         Assert.EndsWith("\n\nSand.", item.Overview);
         Assert.Equal("search:1", item.ProviderIds[ItemBuilder.ActionKey]);
         Assert.Equal("438631", item.ProviderIds["Tmdb"]);
@@ -52,7 +52,7 @@ public class ItemBuilderTests
         Assert.Equal(TimeSpan.FromMinutes(155).Ticks, item.RunTimeTicks);
         Assert.Equal(ChannelItemType.Media, item.Type);
         Assert.Equal(ChannelMediaContentType.Movie, item.ContentType);
-        Assert.Contains("Requested", item.Tags);
+        Assert.Contains("Aangevraagd", item.Tags);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public class ItemBuilderTests
     {
         var item = ItemBuilder.Wanted(MakeMovie(available: false));
 
-        Assert.StartsWith("Requested, not released yet.", item.Overview);
+        Assert.StartsWith("Aangevraagd. De film is nog niet uitgekomen.", item.Overview);
         Assert.False(item.ProviderIds.ContainsKey(ItemBuilder.ActionKey));
     }
 
@@ -94,8 +94,8 @@ public class ItemBuilderTests
     {
         var item = ItemBuilder.Upcoming(MakeMovie(), Today);
 
-        Assert.StartsWith("Releases 2026-11-14 (digital). Not available to watch yet.", item.Overview);
-        Assert.Equal("Dune \u00b7 Out Nov 14", item.Name);
+        Assert.StartsWith("Komt uit op 14 november 2026 (digitaal). Nog niet te kijken.", item.Overview);
+        Assert.Equal("Dune \u00b7 Verwacht 14 nov", item.Name);
         Assert.Equal(new DateTimeOffset(2026, 11, 14, 0, 0, 0, TimeSpan.Zero), item.PremiereDate);
     }
 
@@ -107,18 +107,18 @@ public class ItemBuilderTests
         m.DigitalRelease = null;
         m.PhysicalRelease = "2026-12-01T00:00:00Z";
 
-        Assert.StartsWith("Releases 2026-12-01 (physical)", ItemBuilder.Upcoming(m, Today).Overview);
+        Assert.StartsWith("Komt uit op 1 december 2026 (op dvd/blu-ray)", ItemBuilder.Upcoming(m, Today).Overview);
     }
 
     [Theory]
-    [InlineData("downloading", "downloading", 1000, 550, "00:12:00", "Downloading 45%, 12 min left")]
-    [InlineData("downloading", "downloading", 1000, 0, "01:30:00", "Downloading 100%, 1 h 30 min left")]
-    [InlineData("downloading", "downloading", 0, 0, null, "Downloading 0%")]
-    [InlineData("paused", "downloading", 1000, 900, null, "Paused 10%")]
-    [InlineData("queued", "downloading", 1000, 1000, null, "Queued")]
-    [InlineData("completed", "importPending", 1000, 0, null, "Importing")]
-    [InlineData("completed", "downloading", 1000, 0, null, "Downloaded, waiting for import")]
-    [InlineData("failed", "failed", 1000, 0, null, "Failed: disk full")]
+    [InlineData("downloading", "downloading", 1000, 550, "00:12:00", "Wordt gedownload 45%, nog 12 min")]
+    [InlineData("downloading", "downloading", 1000, 0, "01:30:00", "Wordt gedownload 100%, nog 1 u 30 min")]
+    [InlineData("downloading", "downloading", 0, 0, null, "Wordt gedownload 0%")]
+    [InlineData("paused", "downloading", 1000, 900, null, "Gepauzeerd 10%")]
+    [InlineData("queued", "downloading", 1000, 1000, null, "In de wachtrij")]
+    [InlineData("completed", "importPending", 1000, 0, null, "Bijna klaar")]
+    [InlineData("completed", "downloading", 1000, 0, null, "Bijna klaar")]
+    [InlineData("failed", "failed", 1000, 0, null, "Mislukt")]
     public void Queue_status_text(string status, string state, double size, double left, string? timeLeft, string expected)
     {
         var q = new QueueItem { Status = status, TrackedDownloadState = state, Size = size, SizeLeft = left, TimeLeft = timeLeft, ErrorMessage = status == "failed" ? "disk full" : null };
@@ -132,8 +132,8 @@ public class ItemBuilderTests
         var item = ItemBuilder.Queued(new QueueItem { Id = 9, MovieId = 3, Title = "Some.Release.2160p", Status = "downloading", Size = 10, SizeLeft = 5 });
 
         Assert.Equal("queue:9", item.Id);
-        Assert.Equal("Some.Release.2160p \u00b7 Downloading 50%", item.Name);
-        Assert.StartsWith("Downloading 50%", item.Overview);
+        Assert.Equal("Some.Release.2160p \u00b7 Wordt gedownload 50%", item.Name);
+        Assert.StartsWith("Wordt gedownload 50%", item.Overview);
     }
 
     [Fact]
@@ -162,10 +162,10 @@ public class ItemBuilderTests
     {
         var item = ItemBuilder.Discover(MakeMovie(), null, ItemBuilder.TrendingFolderId);
 
-        Assert.Equal("Dune \u00b7 Tap \u2665 to request", item.Name);
+        Assert.Equal("Dune \u00b7 Tik \u2665 om aan te vragen", item.Name);
         Assert.Equal("request:438631", item.ProviderIds[ItemBuilder.ActionKey]);
         Assert.Equal("discover-trending:438631", item.Id);
-        Assert.StartsWith("Not in your library.", item.Overview);
+        Assert.StartsWith("Nog niet beschikbaar.", item.Overview);
     }
 
     [Fact]
@@ -174,8 +174,8 @@ public class ItemBuilderTests
         var requested = ItemBuilder.Discover(MakeMovie(), MakeMovie(hasFile: false), ItemBuilder.PopularFolderId);
         var inLibrary = ItemBuilder.Discover(MakeMovie(), MakeMovie(hasFile: true), ItemBuilder.PopularFolderId);
 
-        Assert.Equal("Dune \u00b7 Requested", requested.Name);
-        Assert.Equal("Dune \u00b7 In library", inLibrary.Name);
+        Assert.Equal("Dune \u00b7 Aangevraagd", requested.Name);
+        Assert.Equal("Dune \u00b7 Al te kijken", inLibrary.Name);
         Assert.False(requested.ProviderIds.ContainsKey(ItemBuilder.ActionKey));
         Assert.False(inLibrary.ProviderIds.ContainsKey(ItemBuilder.ActionKey));
     }

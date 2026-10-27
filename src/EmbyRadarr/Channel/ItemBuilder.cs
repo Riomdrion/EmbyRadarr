@@ -10,13 +10,20 @@ using MediaBrowser.Model.Entities;
 
 namespace EmbyRadarr.Channel
 {
-    /// <summary>Turns Radarr data into channel items. Pure functions, no I/O.</summary>
+    /// <summary>
+    /// Turns Radarr data into channel items. Pure functions, no I/O.
+    /// All text is Dutch and never mentions Radarr: users only see "Films aanvragen".
+    /// </summary>
     public static class ItemBuilder
     {
         public const string DiscoverFolderId = "discover";
         public const string TrendingFolderId = "discover-trending";
         public const string PopularFolderId = "discover-popular";
         public const string RecommendedFolderId = "discover-recommended";
+
+        /// <summary>Search result folders are "discover-search-&lt;n&gt;" so they share Discover's favorite handling.</summary>
+        public const string SearchFolderPrefix = "discover-search-";
+        public const string SearchRootFolderId = "search";
         public const string WantedFolderId = "wanted";
         public const string UpcomingFolderId = "upcoming";
         public const string QueueFolderId = "queue";
@@ -26,17 +33,20 @@ namespace EmbyRadarr.Channel
         /// </summary>
         public const string ActionKey = "EmbyRadarrAction";
 
+        // Own month names: the server may run without Dutch culture data.
+        private static readonly string[] Months = { "januari", "februari", "maart", "april", "mei", "juni", "juli", "augustus", "september", "oktober", "november", "december" };
+
         public static IEnumerable<Movie> SelectWanted(IEnumerable<Movie> movies)
             => movies.Where(m => m.Monitored && !m.HasFile);
 
         public static ChannelItemInfo Wanted(Movie m)
         {
             var status = m.IsAvailable
-                ? "Requested, not available to watch yet. Tap the heart (favorite) to make Radarr search again."
-                : "Requested, not released yet.";
-            var item = Base(m, WantedFolderId + ":" + m.Id, "Not available yet", status);
+                ? "Aangevraagd, maar nog niet te kijken. Tik op het hartje om opnieuw te laten zoeken."
+                : "Aangevraagd. De film is nog niet uitgekomen.";
+            var item = Base(m, WantedFolderId + ":" + m.Id, "Nog niet te kijken", status);
             item.PremiereDate = FirstRelease(m);
-            item.Tags = new List<string> { "Requested" };
+            item.Tags = new List<string> { "Aangevraagd" };
             if (m.IsAvailable && m.Id > 0)
             {
                 item.ProviderIds[ActionKey] = "search:" + m.Id.ToString(CultureInfo.InvariantCulture);
@@ -48,23 +58,33 @@ namespace EmbyRadarr.Channel
         public static ChannelItemInfo Upcoming(Movie m, DateTime todayUtc)
         {
             var next = NextRelease(m, todayUtc);
-            var status = next == null
-                ? "Upcoming"
-                : string.Format(CultureInfo.InvariantCulture, "Releases {0:yyyy-MM-dd} ({1})", next.Value.Date, next.Value.Kind);
-            var shortStatus = next == null ? "Coming soon" : "Out " + next.Value.Date.ToString("MMM d", CultureInfo.InvariantCulture);
-            if (m.HasFile)
+            string status;
+            string shortStatus;
+            if (next == null)
             {
-                status += ", already in your library";
-                shortStatus = "In library";
+                status = "Komt binnenkort uit.";
+                shortStatus = "Binnenkort";
             }
             else
             {
-                status += ". Not available to watch yet.";
+                var d = next.Value.Date.UtcDateTime;
+                status = "Komt uit op " + LongDate(d) + " (" + next.Value.Kind + ").";
+                shortStatus = "Verwacht " + d.Day + " " + Months[d.Month - 1].Substring(0, 3);
+            }
+
+            if (m.HasFile)
+            {
+                status += " Staat al in je bibliotheek.";
+                shortStatus = "Al te kijken";
+            }
+            else
+            {
+                status += " Nog niet te kijken.";
             }
 
             var item = Base(m, UpcomingFolderId + ":" + m.Id, shortStatus, status);
             item.PremiereDate = next?.Date ?? FirstRelease(m);
-            item.Tags = new List<string> { "Upcoming" };
+            item.Tags = new List<string> { "Binnenkort" };
             return item;
         }
 
@@ -72,36 +92,36 @@ namespace EmbyRadarr.Channel
         {
             var movie = q.Movie ?? new Movie { Id = q.MovieId, Title = q.Title };
             var status = QueueStatus(q);
-            var item = Base(movie, QueueFolderId + ":" + q.Id, status, status + ". Not available to watch yet.");
+            var item = Base(movie, QueueFolderId + ":" + q.Id, status, status + ". Nog niet te kijken.");
             item.PremiereDate = FirstRelease(movie);
-            item.Tags = new List<string> { "Downloading" };
+            item.Tags = new List<string> { "Wordt binnengehaald" };
             return item;
         }
 
-        /// <summary>A Discover movie. <paramref name="inRadarr"/> is the matching Radarr movie, if it was added already.</summary>
+        /// <summary>A Discover or search result. <paramref name="inRadarr"/> is the matching requested movie, if any.</summary>
         public static ChannelItemInfo Discover(Movie m, Movie inRadarr, string folderId)
         {
             ChannelItemInfo item;
             if (inRadarr?.HasFile == true)
             {
-                item = Base(m, folderId + ":" + m.TmdbId, "In library", "Already in your library. Watch it from your Movies library.");
+                item = Base(m, folderId + ":" + m.TmdbId, "Al te kijken", "Staat al in je bibliotheek. Je kunt hem kijken via Films.");
             }
             else if (inRadarr != null)
             {
-                item = Base(m, folderId + ":" + m.TmdbId, "Requested", "Requested, not available to watch yet.");
+                item = Base(m, folderId + ":" + m.TmdbId, "Aangevraagd", "Is al aangevraagd, maar nog niet te kijken.");
             }
             else
             {
-                item = Base(m, folderId + ":" + m.TmdbId, "Tap ♥ to request", "Not in your library. Tap the heart (favorite) to request it.");
+                item = Base(m, folderId + ":" + m.TmdbId, "Tik ♥ om aan te vragen", "Nog niet beschikbaar. Tik op het hartje (favoriet) om deze film aan te vragen.");
                 item.ProviderIds[ActionKey] = "request:" + m.TmdbId.ToString(CultureInfo.InvariantCulture);
             }
 
             item.PremiereDate = FirstRelease(m);
-            item.Tags = new List<string> { "Discover" };
+            item.Tags = new List<string> { "Ontdekken" };
             return item;
         }
 
-        /// <summary>E.g. "Downloading 45%, 12 min left", "Paused 10%", "Importing", "Failed: ...".</summary>
+        /// <summary>E.g. "Wordt gedownload 45%, nog 12 min", "Gepauzeerd 10%", "Bijna klaar", "Mislukt".</summary>
         public static string QueueStatus(QueueItem q)
         {
             // (size - left) * 100 / size avoids 1 - 0.55 = 0.4499... rounding down to 44%.
@@ -112,33 +132,30 @@ namespace EmbyRadarr.Channel
             {
                 case "importPending":
                 case "importing":
-                    return "Importing";
+                    return "Bijna klaar";
                 case "importBlocked":
-                    return "Import blocked" + Suffix(q.ErrorMessage);
+                    return "Bijna klaar, wacht op de beheerder";
                 case "failedPending":
                 case "failed":
-                    return "Failed" + Suffix(q.ErrorMessage);
+                    return "Mislukt";
             }
 
             switch (q.Status)
             {
                 case "queued":
-                    return "Queued";
                 case "delay":
-                    return "Delayed";
+                    return "In de wachtrij";
                 case "paused":
-                    return "Paused " + percent + "%";
+                    return "Gepauzeerd " + percent + "%";
                 case "completed":
-                    return "Downloaded, waiting for import";
+                    return "Bijna klaar";
                 case "failed":
-                    return "Failed" + Suffix(q.ErrorMessage);
-                case "warning":
-                    return "Downloading " + percent + "% (warning" + Suffix(q.ErrorMessage) + ")";
+                    return "Mislukt";
                 case "downloadClientUnavailable":
-                    return "Download client unavailable";
+                    return "Even niet bereikbaar";
                 default:
                     var left = FormatTimeLeft(q.TimeLeft);
-                    return "Downloading " + percent + "%" + (left == null ? string.Empty : ", " + left + " left");
+                    return "Wordt gedownload " + percent + "%" + (left == null ? string.Empty : ", nog " + left);
             }
         }
 
@@ -171,7 +188,7 @@ namespace EmbyRadarr.Channel
                     sorted = items.OrderBy(i => i.PremiereDate ?? DateTimeOffset.MaxValue);
                     break;
                 default:
-                    // Queue and Discover: keep Radarr's order. Requested/Upcoming: soonest release first.
+                    // Queue, Discover and search results: keep Radarr's order. Requested/Upcoming: soonest release first.
                     var keepOrder = folderId == QueueFolderId || folderId.StartsWith(DiscoverFolderId, StringComparison.Ordinal);
                     sorted = keepOrder ? items : items.OrderBy(i => i.PremiereDate ?? DateTimeOffset.MaxValue);
                     break;
@@ -213,6 +230,9 @@ namespace EmbyRadarr.Channel
             return m.Images?.FirstOrDefault(i => i.CoverType == "poster" && !string.IsNullOrEmpty(i.RemoteUrl))?.RemoteUrl;
         }
 
+        /// <summary>"14 november 2026".</summary>
+        public static string LongDate(DateTime d) => d.Day + " " + Months[d.Month - 1] + " " + d.Year;
+
         private static ChannelItemInfo Base(Movie m, string id, string shortStatus, string status)
         {
             var overview = status;
@@ -242,7 +262,7 @@ namespace EmbyRadarr.Channel
             {
                 Id = id,
                 // The status is part of the name so it shows in every Emby app, even in poster grids.
-                Name = (string.IsNullOrEmpty(m.Title) ? "Unknown movie" : m.Title) + " \u00b7 " + shortStatus,
+                Name = (string.IsNullOrEmpty(m.Title) ? "Onbekende film" : m.Title) + " · " + shortStatus,
                 ProductionYear = m.Year > 0 ? m.Year : (int?)null,
                 Overview = overview,
                 Tagline = status,
@@ -263,9 +283,9 @@ namespace EmbyRadarr.Channel
         private static IEnumerable<(DateTimeOffset Date, string Kind)> Releases(Movie m)
         {
             var list = new List<(DateTimeOffset, string)>();
-            Add(list, m.InCinemas, "in cinemas");
-            Add(list, m.DigitalRelease, "digital");
-            Add(list, m.PhysicalRelease, "physical");
+            Add(list, m.InCinemas, "in de bioscoop");
+            Add(list, m.DigitalRelease, "digitaal");
+            Add(list, m.PhysicalRelease, "op dvd/blu-ray");
             return list;
         }
 
@@ -293,12 +313,10 @@ namespace EmbyRadarr.Channel
 
             if (t.TotalHours >= 1)
             {
-                return string.Format(CultureInfo.InvariantCulture, "{0} h {1} min", (int)t.TotalHours, t.Minutes);
+                return string.Format(CultureInfo.InvariantCulture, "{0} u {1} min", (int)t.TotalHours, t.Minutes);
             }
 
             return Math.Max(1, (int)Math.Round(t.TotalMinutes)) + " min";
         }
-
-        private static string Suffix(string message) => string.IsNullOrWhiteSpace(message) ? string.Empty : ": " + message.Trim();
     }
 }

@@ -11,11 +11,15 @@ namespace EmbyRadarr.Radarr
     public class RadarrService
     {
         public const int UpcomingDays = 90;
+        public const int MaxSearches = 15;
+        public const int MaxSearchResults = 20;
 
         private readonly RadarrClient client;
         private readonly Func<PluginConfiguration> config;
         private readonly ResponseCache cache;
         private readonly Func<DateTime> clock;
+        private readonly List<SearchResult> searches = new List<SearchResult>();
+        private int nextSearchId = 1;
 
         public RadarrService(RadarrClient client, Func<PluginConfiguration> config, ResponseCache cache = null, Func<DateTime> clock = null)
         {
@@ -49,6 +53,51 @@ namespace EmbyRadarr.Radarr
 
         public Task<List<Movie>> GetDiscover(CancellationToken token)
             => this.Cached("discover", async conn => (await this.client.GetDiscover(conn, token).ConfigureAwait(false)).Where(m => !m.IsExcluded && m.TmdbId > 0).ToList());
+
+        /// <summary>Recent searches, newest first.</summary>
+        public IReadOnlyList<SearchResult> Searches
+        {
+            get
+            {
+                lock (this.searches)
+                {
+                    return this.searches.ToList();
+                }
+            }
+        }
+
+        public SearchResult GetSearch(int id)
+        {
+            lock (this.searches)
+            {
+                return this.searches.FirstOrDefault(s => s.Id == id);
+            }
+        }
+
+        /// <summary>Looks a title up and keeps the result for the channel's search folder.</summary>
+        public async Task<SearchResult> Search(string term, CancellationToken token)
+        {
+            var movies = await this.client.Lookup(this.Connection, term, token).ConfigureAwait(false);
+            var result = new SearchResult
+            {
+                Term = term,
+                SearchedUtc = this.clock(),
+                Movies = movies.Where(m => m.TmdbId > 0).Take(MaxSearchResults).ToList(),
+            };
+
+            lock (this.searches)
+            {
+                result.Id = this.nextSearchId++;
+                this.searches.Insert(0, result);
+                if (this.searches.Count > MaxSearches)
+                {
+                    this.searches.RemoveAt(this.searches.Count - 1);
+                }
+            }
+
+            this.Changed?.Invoke(this, EventArgs.Empty);
+            return result;
+        }
 
         /// <summary>Adds a movie to Radarr (with the configured profile and root folder) and starts a search.</summary>
         /// <returns>A short description of what happened.</returns>
@@ -115,5 +164,16 @@ namespace EmbyRadarr.Radarr
             var ttl = TimeSpan.FromMinutes(this.config().CacheMinutesClamped);
             return this.cache.GetOrFetch(conn.BaseUrl + "|" + what, ttl, () => fetch(conn));
         }
+    }
+
+    public class SearchResult
+    {
+        public int Id { get; set; }
+
+        public string Term { get; set; }
+
+        public DateTime SearchedUtc { get; set; }
+
+        public List<Movie> Movies { get; set; }
     }
 }

@@ -103,6 +103,56 @@ public class RadarrServiceTests
         Assert.Equal("/api/v3/importlist/movie?includeRecommendations=true&includeTrending=true&includePopular=true", this.radarr.Requests.Single().Request.RequestUri!.PathAndQuery);
     }
 
+    [Fact]
+    public async Task Search_looks_up_the_term_and_keeps_recent_searches_newest_first()
+    {
+        this.radarr.On("GET /api/v3/movie/lookup", """[{"title":"Dune","year":2021,"tmdbId":438631},{"title":"Dune","year":1984,"tmdbId":841},{"title":"No id","tmdbId":0}]""");
+
+        var first = await this.service.Search("dune & co", default);
+        var second = await this.service.Search("dune", default);
+
+        Assert.Equal("/api/v3/movie/lookup?term=dune%20%26%20co", this.radarr.Requests[0].Request.RequestUri!.PathAndQuery);
+        Assert.Equal(new[] { 2021, 1984 }, first.Movies.Select(m => m.Year));
+        Assert.Equal(new[] { second.Id, first.Id }, this.service.Searches.Select(s => s.Id));
+        Assert.Same(first, this.service.GetSearch(first.Id));
+        Assert.Equal(2, this.changed);
+    }
+
+    [Fact]
+    public async Task Only_the_last_15_searches_are_kept()
+    {
+        this.radarr.On("GET /api/v3/movie/lookup", "[]");
+
+        for (var i = 0; i < 20; i++)
+        {
+            await this.service.Search("film " + i, default);
+        }
+
+        Assert.Equal(RadarrService.MaxSearches, this.service.Searches.Count);
+        Assert.Equal("film 19", this.service.Searches[0].Term);
+    }
+
+    [Theory]
+    [InlineData("Zoek: Dune", "Dune")]
+    [InlineData("  zoek:dune 2021 ", "dune 2021")]
+    [InlineData("ZOEKEN: The Matrix", "The Matrix")]
+    [InlineData("zoek Dune", "Dune")]
+    [InlineData("Search: Dune", "Dune")]
+    [InlineData("Zoek: D", null)]
+    [InlineData("Mijn favorieten", null)]
+    [InlineData("\u2713 3 films gevonden voor \u201cDune\u201d", null)]
+    [InlineData(null, null)]
+    public void Playlist_names_that_are_searches(string? name, string? term)
+        => Assert.Equal(term, PlaylistSearchHandler.ParseSearchTerm(name!));
+
+    [Fact]
+    public void Search_result_ids_are_handled_like_discover_by_the_heart()
+    {
+        var movie = new MediaBrowser.Controller.Entities.Movies.Movie { ExternalId = EmbyRadarr.Channel.ItemBuilder.SearchFolderPrefix + "3:438631" };
+
+        Assert.Equal("request:438631", FavoriteRequestHandler.ParseAction(movie)!.ToString());
+    }
+
     [Theory]
     [InlineData("request:603", "request", 603)]
     [InlineData("search:12", "search", 12)]

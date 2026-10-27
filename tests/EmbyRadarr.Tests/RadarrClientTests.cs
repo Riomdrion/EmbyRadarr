@@ -74,7 +74,7 @@ public class RadarrClientTests
         var q = queue.Records.Single();
         Assert.Equal((55, 7, "downloading", "00:12:00"), (q.Id, q.MovieId, q.Status, q.TimeLeft));
         Assert.Equal("Dune: Part Three", q.Movie.Title);
-        Assert.Equal("Downloading 45%, 12 min left", EmbyRadarr.Channel.ItemBuilder.QueueStatus(q));
+        Assert.Equal("Wordt gedownload 45%, nog 12 min", EmbyRadarr.Channel.ItemBuilder.QueueStatus(q));
 
         Assert.Contains(this.http.Requests, r => r.Request.RequestUri!.PathAndQuery == "/radarr/api/v3/calendar?unmonitored=false&start=2026-10-26T00:00:00Z&end=2027-01-24T00:00:00Z");
         Assert.Contains(this.http.Requests, r => r.Request.RequestUri!.PathAndQuery == "/radarr/api/v3/queue?page=1&pageSize=200&includeMovie=true");

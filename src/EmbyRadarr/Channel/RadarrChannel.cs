@@ -36,9 +36,9 @@ namespace EmbyRadarr.Channel
         /// <summary>The instance Emby created, so other parts of the plugin can ask for a refresh.</summary>
         internal static RadarrChannel Current { get; private set; }
 
-        public string Name => "Radarr";
+        public string Name => "Films aanvragen";
 
-        public string Description => "Request movies and follow their status. Tap the heart on a movie in Discover to request it.";
+        public string Description => "Vraag films aan en volg hoe ver ze zijn. Tik op het hartje bij een film om hem aan te vragen.";
 
         public ChannelParentalRating ParentalRating => ChannelParentalRating.GeneralAudience;
 
@@ -69,9 +69,14 @@ namespace EmbyRadarr.Channel
             if (folderId == ItemBuilder.DiscoverFolderId)
             {
                 return Single(
-                    Folder(ItemBuilder.TrendingFolderId, "Trending", "Movies trending right now. Tap the heart on a movie to request it."),
-                    Folder(ItemBuilder.PopularFolderId, "Popular", "Popular movies. Tap the heart on a movie to request it."),
-                    Folder(ItemBuilder.RecommendedFolderId, "Recommended", "Recommended based on your Radarr library. Tap the heart on a movie to request it."));
+                    Folder(ItemBuilder.TrendingFolderId, "Nu populair", "Films waar nu veel over gepraat wordt. Tik op het hartje om er een aan te vragen."),
+                    Folder(ItemBuilder.PopularFolderId, "Populair", "Populaire films. Tik op het hartje om er een aan te vragen."),
+                    Folder(ItemBuilder.RecommendedFolderId, "Aanbevolen", "Aanbevolen op basis van de films die er al zijn. Tik op het hartje om er een aan te vragen."));
+            }
+
+            if (folderId == ItemBuilder.SearchRootFolderId)
+            {
+                return SearchFolders();
             }
 
             List<ChannelItemInfo> items;
@@ -95,23 +100,30 @@ namespace EmbyRadarr.Channel
                         items = (await Data.GetQueue(cancellationToken).ConfigureAwait(false)).Select(ItemBuilder.Queued).ToList();
                         break;
                     default:
+                        if (folderId.StartsWith(ItemBuilder.SearchFolderPrefix, StringComparison.Ordinal))
+                        {
+                            items = await SearchItems(folderId, cancellationToken).ConfigureAwait(false);
+                            break;
+                        }
+
                         // Message items are folders too; opening one shows nothing.
                         return Single();
                 }
             }
             catch (RadarrException ex)
             {
-                return Single(ItemBuilder.Message("error", "Radarr unavailable", ex.Message));
+                Plugin.Logger.Warn("Channel folder {0}: {1}", folderId, ex.Message);
+                return Single(ItemBuilder.Message("error", "Aanvragen werkt nu even niet", "Probeer het later opnieuw. (" + ex.Message + ")"));
             }
             catch (Exception ex) when (!(ex is OperationCanceledException))
             {
                 Plugin.Logger.ErrorException("Unexpected error while loading channel folder {0}", ex, folderId);
-                return Single(ItemBuilder.Message("error", "Error loading Radarr data", ex.Message));
+                return Single(ItemBuilder.Message("error", "Aanvragen werkt nu even niet", "Probeer het later opnieuw."));
             }
 
             if (items.Count == 0)
             {
-                return Single(ItemBuilder.Message("empty", EmptyTitle(folderId), "Nothing here right now."));
+                return Single(ItemBuilder.Message("empty", EmptyTitle(folderId), "Hier staat nu niets."));
             }
 
             return ItemBuilder.Page(items, query, folderId);
@@ -140,10 +152,7 @@ namespace EmbyRadarr.Channel
         private static async Task<List<ChannelItemInfo>> DiscoverItems(string folderId, CancellationToken token)
         {
             var discover = await Data.GetDiscover(token).ConfigureAwait(false);
-            var inRadarr = (await Data.GetMovies(token).ConfigureAwait(false))
-                .Where(m => m.TmdbId > 0)
-                .GroupBy(m => m.TmdbId)
-                .ToDictionary(g => g.Key, g => g.First());
+            var inRadarr = await RequestedByTmdb(token).ConfigureAwait(false);
 
             Func<Movie, bool> filter;
             switch (folderId)
@@ -195,25 +204,58 @@ namespace EmbyRadarr.Channel
 
         private static ChannelItemResult RootFolders()
             => Single(
-                Folder(ItemBuilder.DiscoverFolderId, "Discover", "Find movies to request. Tap the heart (favorite) on a movie to request it."),
-                Folder(ItemBuilder.WantedFolderId, "Requested", "Requested movies that are not available to watch yet."),
-                Folder(ItemBuilder.UpcomingFolderId, "Coming soon", "Requested movies with a release in the next " + RadarrService.UpcomingDays + " days."),
-                Folder(ItemBuilder.QueueFolderId, "Downloading", "Movies downloading right now, with progress."));
+                Folder(ItemBuilder.DiscoverFolderId, "Ontdekken", "Populaire en aanbevolen films. Tik op het hartje (favoriet) bij een film om hem aan te vragen."),
+                Folder(ItemBuilder.SearchRootFolderId, "Zoeken", SearchHelp),
+                Folder(ItemBuilder.WantedFolderId, "Aangevraagd", "Films die zijn aangevraagd, maar nog niet te kijken zijn."),
+                Folder(ItemBuilder.UpcomingFolderId, "Binnenkort", "Aangevraagde films die de komende " + RadarrService.UpcomingDays + " dagen uitkomen."),
+                Folder(ItemBuilder.QueueFolderId, "Wordt binnengehaald", "Films die nu worden gedownload, met hoe ver ze zijn."));
+
+        private const string SearchHelp = "Een specifieke film zoeken? Maak een afspeellijst met de naam \u201cZoek: titel\u201d, "
+            + "bijvoorbeeld \u201cZoek: Dune\u201d. Binnen een paar seconden staan de resultaten hier. Tik op het hartje bij de juiste film om hem aan te vragen.";
+
+        private static ChannelItemResult SearchFolders()
+        {
+            var searches = Data.Searches;
+            var items = new List<ChannelItemInfo> { ItemBuilder.Message("search-help", "Zo zoek je een film", SearchHelp) };
+            items.AddRange(searches.Select(s => Folder(
+                ItemBuilder.SearchFolderPrefix + s.Id,
+                "\u201c" + s.Term + "\u201d (" + s.Movies.Count + " films)",
+                "Gezocht op " + ItemBuilder.LongDate(s.SearchedUtc) + ". Tik op het hartje bij een film om hem aan te vragen.")));
+            return Single(items.ToArray());
+        }
+
+        private static async Task<List<ChannelItemInfo>> SearchItems(string folderId, CancellationToken token)
+        {
+            var search = int.TryParse(folderId.Substring(ItemBuilder.SearchFolderPrefix.Length), out var id) ? Data.GetSearch(id) : null;
+            if (search == null)
+            {
+                return new List<ChannelItemInfo>();
+            }
+
+            var inRadarr = await RequestedByTmdb(token).ConfigureAwait(false);
+            return search.Movies.Select(m => ItemBuilder.Discover(m, inRadarr.TryGetValue(m.TmdbId, out var r) ? r : null, folderId)).ToList();
+        }
+
+        private static async Task<Dictionary<int, Movie>> RequestedByTmdb(CancellationToken token)
+            => (await Data.GetMovies(token).ConfigureAwait(false))
+                .Where(m => m.TmdbId > 0)
+                .GroupBy(m => m.TmdbId)
+                .ToDictionary(g => g.Key, g => g.First());
 
         private static ChannelItemInfo Folder(string id, string name, string overview)
             => new ChannelItemInfo { Id = id, Name = name, Overview = overview, Type = ChannelItemType.Folder, FolderType = ChannelFolderType.Container };
 
         private static ChannelItemInfo NotConfigured()
-            => ItemBuilder.Message("setup", "Radarr is not configured", "An administrator needs to open Dashboard > Plugins > Radarr, enter the Radarr URL and API key, test and save.");
+            => ItemBuilder.Message("setup", "Aanvragen is nog niet ingesteld", "Een beheerder moet dit nog instellen (Dashboard > Plugins > Radarr).");
 
         private static string EmptyTitle(string folderId)
         {
             switch (folderId)
             {
-                case ItemBuilder.WantedFolderId: return "No requested movies";
-                case ItemBuilder.UpcomingFolderId: return "Nothing coming soon";
-                case ItemBuilder.QueueFolderId: return "Nothing downloading";
-                default: return "No movies found";
+                case ItemBuilder.WantedFolderId: return "Geen aangevraagde films";
+                case ItemBuilder.UpcomingFolderId: return "Er komt binnenkort niets uit";
+                case ItemBuilder.QueueFolderId: return "Er wordt nu niets binnengehaald";
+                default: return "Geen films gevonden";
             }
         }
 

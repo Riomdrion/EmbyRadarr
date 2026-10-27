@@ -60,6 +60,10 @@ namespace EmbyRadarr.Radarr
         public Task<List<Movie>> GetDiscover(RadarrConnection conn, CancellationToken token)
             => this.Send<List<Movie>>(conn, HttpMethod.Get, "/api/v3/importlist/movie?includeRecommendations=true&includeTrending=true&includePopular=true", null, token);
 
+        /// <summary>Free-text movie search (Radarr looks it up on TMDb).</summary>
+        public Task<List<Movie>> Lookup(RadarrConnection conn, string term, CancellationToken token)
+            => this.Send<List<Movie>>(conn, HttpMethod.Get, "/api/v3/movie/lookup?term=" + Uri.EscapeDataString(term), null, token);
+
         public Task<Movie> LookupTmdb(RadarrConnection conn, int tmdbId, CancellationToken token)
             => this.Send<Movie>(conn, HttpMethod.Get, "/api/v3/movie/lookup/tmdb?tmdbId=" + tmdbId.ToString(CultureInfo.InvariantCulture), null, token);
 
